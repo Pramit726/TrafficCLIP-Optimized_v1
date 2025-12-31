@@ -1,0 +1,15 @@
+[project]
+name = "src"
+version = "0.0.1"
+description = "A Multimodal Cross-Modal Alignment Framework with Descriptive Semantic Mapping and Non-linear Fusion."
+authors = [{name = "Pramit De", email = "pramitde726@gmail.com"}]
+
+[tool.setuptools]
+packages = {find = {include = ["src"]}} 
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements-dev.txt"}
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,29 @@
+name: traffic-opt
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.10
+
+  # Core data
+  - pandas=2.1.*
+  - numpy
+  - scipy
+  - scapy
+  - requests
+  - py7zr
+  - pyyaml
+
+  # Deep Learning
+  - pytorch=2.8.*
+  - torchvision=0.15.*
+  - transformers
+
+  # Metrics
+  - scikit-learn=1.7.2
+
+  # Visualization
+  - matplotlib
+
+  # Environment & config
+  - python-dotenv
