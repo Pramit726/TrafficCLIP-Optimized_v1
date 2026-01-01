@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
 from early_stopping import EarlyStopping
 from loss import contrastive_loss_func
@@ -30,16 +30,17 @@ def set_seed(seed=42):
     torch.backends.cudnn.benchmark = False
 
 
-def validate(model, val_loader, device):
+def validate(model, val_loader, device, temperature=0.07):
     """
     Standardized Validation Function:
-    Calculates Accuracy and Macro F1-score as used in TrafficCLIP benchmarks.
+    Calculates AC, Macro F1, PR, and RC using joint loss (CE + CL).
     """
     model.eval()
     all_preds = []
     all_labels = []
-    val_loss = 0.0
-    criterion = torch.nn.CrossEntropyLoss()
+    total_val_loss = 0.0
+
+    criterion_ce = torch.nn.CrossEntropyLoss()
 
     with torch.no_grad():
         for batch in val_loader:
@@ -48,23 +49,32 @@ def validate(model, val_loader, device):
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
 
-            # Get model predictions
+            # Forward Pass
             logits = model(images, input_ids, attention_mask)
-            loss = criterion(logits, labels)
-            val_loss += loss.item()
 
-            # Convert logits to class indices
+            # Joint Loss Calculation (CE + CL)
+            loss_ce = criterion_ce(logits, labels)
+            v_f = model.get_vision_features(images)
+            loss_cl = contrastive_loss_func(v_f, labels, temperature)
+
+            loss = loss_ce + loss_cl
+            total_val_loss += loss.item()
+
+            # Predictions and Labels
             preds = torch.argmax(logits, dim=1)
-
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
 
-    # Calculate metrics according to the paper's standards
-    acc = accuracy_score(all_labels, all_preds)
-    f1 = f1_score(all_labels, all_preds, average="macro")
-    avg_loss = val_loss / len(val_loader)
+    # Standardized Performance Metrics
+    metrics = {
+        "loss": total_val_loss / len(val_loader),
+        "accuracy": accuracy_score(all_labels, all_preds),
+        "precision": precision_score(all_labels, all_preds, average="macro"),
+        "recall": recall_score(all_labels, all_preds, average="macro"),
+        "f1_macro": f1_score(all_labels, all_preds, average="macro"),
+    }
 
-    return avg_loss, acc, f1
+    return metrics
 
 
 def train(
@@ -132,7 +142,10 @@ def train(
         )
 
         # Check early stopping condition
-        early_stopping.check_early_stop(val_loss)
+        early_stopping.check_early_stop(val_f1)
+        if early_stopping.stop_training:
+            logging.info("Early stopping triggered. Training terminated.")
+            break
 
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
@@ -201,7 +214,7 @@ if __name__ == "__main__":
     patience = config["early_stopping"]["patience"]
     delta = config["early_stopping"]["delta"]
     early_stopping_traffic_clip = EarlyStopping(
-        patience=patience, delta=delta, verbose=True
+        patience=patience, delta=delta, verbose=True, mode="max"
     )
     logging.info("Starting training for TrafficCLIP")
     try:
@@ -243,7 +256,7 @@ if __name__ == "__main__":
     optimized_traffic_clip.to(device)
     # train optimized traffic clip model
     early_stopping_optimized_traffic_clip = EarlyStopping(
-        patience=patience, delta=delta, verbose=True
+        patience=patience, delta=delta, verbose=True, mode="max"
     )
     logging.info("Starting training for OptimizedTrafficCLIP")
     try:

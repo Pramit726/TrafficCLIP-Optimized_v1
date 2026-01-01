@@ -44,5 +44,5 @@ train:
     epochs: 50
   
 early_stopping:
-  patience: 5
+  patience: 10
   delta: 0.01
