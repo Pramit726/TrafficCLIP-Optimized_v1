@@ -84,7 +84,7 @@ def train(
     # History dictionary for convergence plot
     history = {"train_loss": [], "val_loss": [], "val_f1": []}
     best_f1 = 0.0
-    model_path = Path(__file__).parent / "saved_models"
+    model_path = Path(__file__).parent.parent / "saved_models"
     model_path.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(epochs):
@@ -158,6 +158,10 @@ if __name__ == "__main__":
     try:
         # Parameter Extraction
         SEMANTIC_PROMPTS = config["prompts"]
+        template = "A network traffic grey photo of {}"
+        ORIGINAL_PROMPTS = {
+            label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
+        }
         NPZ_PATH = config["paths"]["output_data_file"]
         TENSOR_DIR = Path(config["paths"]["tensors_dir"])
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
@@ -171,20 +175,22 @@ if __name__ == "__main__":
     # set seed for reproducibility
     set_seed(42)
 
-    # create dataloaders
+    # create dataloaders for TrafficClip
     try:
-        train_loader, val_loader, test_loader = get_dataloader(
-            npz_path=NPZ_PATH,
-            tokenizer=TOKENIZER_NAME,
-            prompts=SEMANTIC_PROMPTS,
-            batch_size=BATCH_SIZE,
-            max_length=MAX_LENGTH,
-            seed=SEED,
+        train_loader_original, val_loader_original, test_loader_original = (
+            get_dataloader(
+                npz_path=NPZ_PATH,
+                tokenizer=TOKENIZER_NAME,
+                prompts=ORIGINAL_PROMPTS,
+                batch_size=BATCH_SIZE,
+                max_length=MAX_LENGTH,
+                seed=SEED,
+            )
         )
 
-        logging.info("DataLoaders created successfully.")
+        logging.info("DataLoaders created successfully for TrafficClip.")
     except Exception as e:
-        logging.error(f"Error creating DataLoaders: {e}")
+        logging.error(f"Error creating DataLoaders for TrafficClip: {e}")
         raise
 
     # initialize original trafficclip model
@@ -202,14 +208,32 @@ if __name__ == "__main__":
         train(
             model=traffic_clip,
             model_type="traffic_clip",
-            train_loader=train_loader,
-            val_loader=val_loader,
+            train_loader=train_loader_original,
+            val_loader=val_loader_original,
             config=config,
             device=device,
             early_stopping=early_stopping_traffic_clip,
         )
     except Exception as e:
         logging.error(f"Error during training TrafficCLIP: {e}")
+        raise
+
+    # create dataloaders for TrafficClip Optimized
+    try:
+        train_loader_optimized, val_loader_optimized, test_loader_optimized = (
+            get_dataloader(
+                npz_path=NPZ_PATH,
+                tokenizer=TOKENIZER_NAME,
+                prompts=SEMANTIC_PROMPTS,
+                batch_size=BATCH_SIZE,
+                max_length=MAX_LENGTH,
+                seed=SEED,
+            )
+        )
+
+        logging.info("DataLoaders created successfully for TrafficClip Optimized.")
+    except Exception as e:
+        logging.error(f"Error creating DataLoaders for TrafficClip Optimized: {e}")
         raise
 
     # initialize optimized trafficclip model
@@ -226,8 +250,8 @@ if __name__ == "__main__":
         train(
             model=optimized_traffic_clip,
             model_type="optimized_traffic_clip",
-            train_loader=train_loader,
-            val_loader=val_loader,
+            train_loader=train_loader_optimized,
+            val_loader=val_loader_optimized,
             config=config,
             device=device,
             early_stopping=early_stopping_optimized_traffic_clip,
