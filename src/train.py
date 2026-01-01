@@ -1,6 +1,8 @@
 import logging
+import random
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -14,6 +16,18 @@ from src.dataset import get_dataloader
 from src.utils.utils import load_config, plot_convergence
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # For deterministic behavior (important!)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def validate(model, val_loader, device):
@@ -121,7 +135,7 @@ def train(
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
             best_f1 = val_f1
-            torch.save(model.state_dict(), f"best_{model_type}_model.pt")
+            torch.save(model.state_dict(), f"saved_models/best_{model_type}_model.pt")
             logging.info(f"--> Best model saved with F1: {val_f1:.4f}")
 
     plot_convergence(history, model_type)
@@ -138,6 +152,8 @@ if __name__ == "__main__":
 
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # set seed for reproducibility
+    set_seed(42)
 
     try:
         # Parameter Extraction
@@ -178,20 +194,20 @@ if __name__ == "__main__":
     early_stopping_traffic_clip = EarlyStopping(
         patience=patience, delta=delta, verbose=True
     )
-    # logging.info("Starting training for TrafficCLIP")
-    # try:
-    #     train(
-    #         model=traffic_clip,
-    #         model_type="traffic_clip",
-    #         train_loader=train_loader,
-    #         val_loader=val_loader,
-    #         config=config,
-    #         device=device,
-    #         early_stopping=early_stopping_traffic_clip,
-    #     )
-    # except Exception as e:
-    #     logging.error(f"Error during training TrafficCLIP: {e}")
-    #     raise
+    logging.info("Starting training for TrafficCLIP")
+    try:
+        train(
+            model=traffic_clip,
+            model_type="traffic_clip",
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=device,
+            early_stopping=early_stopping_traffic_clip,
+        )
+    except Exception as e:
+        logging.error(f"Error during training TrafficCLIP: {e}")
+        raise
 
     # initialize optimized trafficclip model
     traffic_cfg = config["dataset"]["traffic"]["classes"]
