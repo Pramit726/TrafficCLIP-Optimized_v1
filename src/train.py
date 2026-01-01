@@ -25,7 +25,7 @@ def set_seed(seed=42):
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-    # For deterministic behavior (important!)
+    # For deterministic behavior
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
@@ -84,6 +84,8 @@ def train(
     # History dictionary for convergence plot
     history = {"train_loss": [], "val_loss": [], "val_f1": []}
     best_f1 = 0.0
+    model_path = Path(__file__).parent / "saved_models"
+    model_path.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(epochs):
         # Training Phase
@@ -135,8 +137,8 @@ def train(
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
             best_f1 = val_f1
-            torch.save(model.state_dict(), f"saved_models/best_{model_type}_model.pt")
-            logging.info(f"--> Best model saved with F1: {val_f1:.4f}")
+            torch.save(model.state_dict(), model_path / f"best_{model_type}_model.pt")
+            logging.info(f"Best model saved with F1: {val_f1:.4f}")
 
     plot_convergence(history, model_type)
 
@@ -152,8 +154,6 @@ if __name__ == "__main__":
 
     # set device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # set seed for reproducibility
-    set_seed(42)
 
     try:
         # Parameter Extraction
@@ -167,6 +167,9 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
         raise
+
+    # set seed for reproducibility
+    set_seed(42)
 
     # create dataloaders
     try:

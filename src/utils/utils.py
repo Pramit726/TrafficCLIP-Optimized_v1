@@ -132,7 +132,11 @@ def plot_convergence(history, model_type):
     plt.grid(True)
 
     plt.tight_layout()
-    plt.savefig(f"{model_type}_convergence.png")
+
+    # save figure
+    figure_path = Path(__file__).parent / "results" / "figures"
+    figure_path.mkdir(parents=True, exist_ok=True)
+    plt.savefig(figure_path / f"{model_type}_convergence.png")
     plt.show()
 
 
