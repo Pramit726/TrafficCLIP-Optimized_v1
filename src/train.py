@@ -120,7 +120,13 @@ def train(
             scheduler.step()
 
         # Validation Phase
-        val_loss, val_acc, val_pre, val_re, val_f1 = validate(model, val_loader, device)
+        val_metrics = validate(model, val_loader, device)
+
+        val_loss = val_metrics["loss"]
+        val_acc = val_metrics["accuracy"]
+        val_pre = val_metrics["precision"]
+        val_re = val_metrics["recall"]
+        val_f1 = val_metrics["f1_macro"]
 
         history["train_loss"].append(total_train_loss / len(train_loader))
         history["val_loss"].append(val_loss)
