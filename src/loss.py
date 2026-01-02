@@ -2,13 +2,13 @@ import torch
 import torch.nn.functional as F
 
 
-def contrastive_loss_func(features, labels, temperature=0.07):
+def contrastive_loss_func(features, labels, logit_scale):
     """
     Exact implementation of TrafficCLIP's L_CL.
     Optimizes fused vision features V_fused.
     """
     # Compute similarity matrix (V_i · V_a)
-    logits = torch.matmul(features, features.T) / temperature
+    logits = torch.matmul(features, features.T) * logit_scale
 
     # For numerical stability (subtract max)
     logits_max, _ = torch.max(logits, dim=1, keepdim=True)

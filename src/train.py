@@ -38,12 +38,12 @@ def validate(model, val_loader, device, temperature=0.07):
             labels = batch["label"].to(device)
 
             # Forward Pass
-            logits = model(images, input_ids, attention_mask)
+            logits, current_scale = model(images, input_ids, attention_mask)
 
             # Joint Loss Calculation (CE + CL)
             loss_ce = criterion_ce(logits, labels)
             v_f = model.get_vision_features(images)
-            loss_cl = contrastive_loss_func(v_f, labels, temperature)
+            loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
             loss = loss_ce + loss_cl
             total_val_loss += loss.item()
