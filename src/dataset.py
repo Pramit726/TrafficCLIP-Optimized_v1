@@ -98,6 +98,10 @@ if __name__ == "__main__":
     try:
         # Parameter Extraction
         SEMANTIC_PROMPTS = config["prompts"]
+        template = "A network traffic gray photo of {}"
+        ORIGINAL_PROMPTS = {
+            label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
+        }
         NPZ_PATH = config["paths"]["output_data_file"]
         TENSOR_DIR = Path(config["paths"]["tensors_dir"])
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
