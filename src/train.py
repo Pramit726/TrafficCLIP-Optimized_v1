@@ -138,9 +138,11 @@ def train(
         )
 
         # Check early stopping condition
-        early_stopping.check_early_stop(val_f1)
+        early_stopping(val_f1)
         if early_stopping.stop_training:
-            logging.info("Early stopping triggered. Training terminated.")
+            logging.info(
+                f"Early stopping triggered at epoch {epoch+1}. Training terminated."
+            )
             break
 
         # Save the best model based on Macro F1 score
