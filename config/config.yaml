@@ -44,7 +44,10 @@ train:
     epochs: 100
   
 early_stopping:
-  patience: 10
+  traffic_clip:
+    patience: 20
+  optimized_traffic_clip:
+    patience: 10
   delta: 0.01
 
 test:
