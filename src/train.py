@@ -206,9 +206,12 @@ if __name__ == "__main__":
 
     # train original traffic clip model
     patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
-    delta = config["early_stopping"]["delta"]
+    delta_traffic_clip = config["early_stopping"]["traffic_clip"]["delta"]
     early_stopping_traffic_clip = EarlyStopping(
-        patience=patience_traffic_clip, delta=delta, verbose=True, mode="max"
+        patience=patience_traffic_clip,
+        delta=delta_traffic_clip,
+        verbose=True,
+        mode="max",
     )
     logging.info("Starting training for TrafficCLIP")
     try:
@@ -250,10 +253,16 @@ if __name__ == "__main__":
     patience_traffic_clip_optimized = config["early_stopping"][
         "optimized_traffic_clip"
     ]["patience"]
+    delta_traffic_clip_optimized = config["early_stopping"]["optimized_traffic_clip"][
+        "delta"
+    ]
 
     # train optimized traffic clip model
     early_stopping_optimized_traffic_clip = EarlyStopping(
-        patience=patience_traffic_clip_optimized, delta=delta, verbose=True, mode="max"
+        patience=patience_traffic_clip_optimized,
+        delta=delta_traffic_clip_optimized,
+        verbose=True,
+        mode="max",
     )
     logging.info("Starting training for OptimizedTrafficCLIP")
     try:
