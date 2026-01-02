@@ -13,21 +13,9 @@ from loss import contrastive_loss_func
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
 from src.dataset import get_dataloader
-from src.utils.utils import load_config, plot_convergence
+from src.utils.utils import load_config, plot_convergence, set_seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
-
-
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-
-    # For deterministic behavior
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
 
 
 def validate(model, val_loader, device, temperature=0.07):
@@ -88,7 +76,7 @@ def train(
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     criterion_ce = nn.CrossEntropyLoss()
 
-    temperature = 0.07  # Temperature for Contrastive Loss
+    # temperature = 0.07  # Temperature for Contrastive Loss
     epochs = config["train"][model_type]["epochs"]
 
     # History dictionary for convergence plot
@@ -114,12 +102,12 @@ def train(
             labels = batch["label"].to(device)
 
             optimizer.zero_grad()
-            logits = model(images, input_ids, attention_mask)
+            logits, current_scale = model(images, input_ids, attention_mask)
 
             # Joint optimization: CE + CL
             loss_ce = criterion_ce(logits, labels)
             v_f = model.get_vision_features(images)
-            loss_cl = contrastive_loss_func(v_f, labels, temperature)
+            loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
             loss = loss_ce + loss_cl
             loss.backward()
@@ -176,7 +164,6 @@ if __name__ == "__main__":
             label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
         }
         NPZ_PATH = config["paths"]["output_data_file"]
-        TENSOR_DIR = Path(config["paths"]["tensors_dir"])
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]
         SEED = 42
@@ -190,15 +177,13 @@ if __name__ == "__main__":
 
     # create dataloaders for TrafficClip
     try:
-        train_loader_original, val_loader_original, test_loader_original = (
-            get_dataloader(
-                npz_path=NPZ_PATH,
-                tokenizer=TOKENIZER_NAME,
-                prompts=ORIGINAL_PROMPTS,
-                batch_size=BATCH_SIZE,
-                max_length=MAX_LENGTH,
-                seed=SEED,
-            )
+        train_loader_original, val_loader_original, _ = get_dataloader(
+            npz_path=NPZ_PATH,
+            tokenizer=TOKENIZER_NAME,
+            prompts=ORIGINAL_PROMPTS,
+            batch_size=BATCH_SIZE,
+            max_length=MAX_LENGTH,
+            seed=SEED,
         )
 
         logging.info("DataLoaders created successfully for TrafficClip.")
@@ -233,15 +218,13 @@ if __name__ == "__main__":
 
     # create dataloaders for TrafficClip Optimized
     try:
-        train_loader_optimized, val_loader_optimized, test_loader_optimized = (
-            get_dataloader(
-                npz_path=NPZ_PATH,
-                tokenizer=TOKENIZER_NAME,
-                prompts=SEMANTIC_PROMPTS,
-                batch_size=BATCH_SIZE,
-                max_length=MAX_LENGTH,
-                seed=SEED,
-            )
+        train_loader_optimized, val_loader_optimized, _ = get_dataloader(
+            npz_path=NPZ_PATH,
+            tokenizer=TOKENIZER_NAME,
+            prompts=SEMANTIC_PROMPTS,
+            batch_size=BATCH_SIZE,
+            max_length=MAX_LENGTH,
+            seed=SEED,
         )
 
         logging.info("DataLoaders created successfully for TrafficClip Optimized.")

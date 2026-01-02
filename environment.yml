@@ -24,6 +24,7 @@ dependencies:
 
   # Visualization
   - matplotlib
+  - seaborn
 
   # Environment & config
   - python-dotenv

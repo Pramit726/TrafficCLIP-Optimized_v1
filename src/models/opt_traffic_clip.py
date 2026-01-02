@@ -1,5 +1,6 @@
 import logging
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -60,7 +61,11 @@ class OptimizedTrafficCLIP(TrafficCLIP):
         # Concatenate features into a single 2048-dim vector
         combined = torch.cat((v_e, t_e), dim=1)  # [Batch, 2048]
         logits = self.fusion_head(combined)
-        return logits
+
+        # Prevents scaling the logits by more than 100 (exp(4.6052) ≈ 100)
+        with torch.no_grad():
+            self.logit_scale.clamp_(0, np.log(100))
+        return logits, self.logit_scale.exp()
 
 
 if __name__ == "__main__":

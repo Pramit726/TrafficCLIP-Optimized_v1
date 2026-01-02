@@ -2,11 +2,15 @@ import logging
 import os
 import zipfile
 from pathlib import Path
+from random import random
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
+import torch
 import yaml
 from matplotlib import pyplot as plt
+from sklearn.metrics import confusion_matrix
 
 # -------------------------------------------------------------------------
 # Logging configuration
@@ -138,6 +142,35 @@ def plot_convergence(history, model_type):
     figure_path.mkdir(parents=True, exist_ok=True)
     plt.savefig(figure_path / f"{model_type}_convergence.png")
     plt.show()
+
+
+def plot_confusion_matrix(y_true, y_pred, class_names):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=class_names,
+        yticklabels=class_names,
+    )
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
+    plt.title("Confusion Matrix: Performance on Similar Traffic Classes")
+    plt.show()
+
+
+def set_seed(seed=42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    # For deterministic behavior
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 if __name__ == "__main__":

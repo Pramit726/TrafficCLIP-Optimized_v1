@@ -38,11 +38,15 @@ preprocess:
 train:
   traffic_clip:
     batch_size: 64
-    epochs: 60
+    epochs: 100
   optimized_traffic_clip:
     batch_size: 64
-    epochs: 50
+    epochs: 100
   
 early_stopping:
   patience: 10
   delta: 0.01
+
+test:
+  max_length: 64
+  batch_size: 64

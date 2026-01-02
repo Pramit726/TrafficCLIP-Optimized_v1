@@ -107,12 +107,16 @@ class TrafficCLIP(nn.Module):
         v_e = self.get_vision_features(images)
         t_e = self.get_text_features(input_ids, attention_mask)
 
+        # Prevents scaling the logits by more than 100 (exp(4.6052) ≈ 100)
+        with torch.no_grad():
+            self.logit_scale.clamp_(0, np.log(100))
+
         # Cross-modality Representation Fusion via Cosine Similarity
         # logits = np.dot(V_e, T_e.T) * np.exp(t)
         t = self.logit_scale.exp()
         logits = t * torch.matmul(v_e, t_e.t())
 
-        return logits
+        return logits, t
 
 
 if __name__ == "__main__":
