@@ -18,7 +18,7 @@ from src.utils.utils import load_config, plot_convergence, set_seed
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(model, val_loader, device, temperature=0.07):
+def validate(model, val_loader, device):
     """
     Standardized Validation Function:
     Calculates AC, Macro F1, PR, and RC using joint loss (CE + CL).
@@ -57,9 +57,11 @@ def validate(model, val_loader, device, temperature=0.07):
     metrics = {
         "loss": total_val_loss / len(val_loader),
         "accuracy": accuracy_score(all_labels, all_preds),
-        "precision": precision_score(all_labels, all_preds, average="macro"),
-        "recall": recall_score(all_labels, all_preds, average="macro"),
-        "f1_macro": f1_score(all_labels, all_preds, average="macro"),
+        "precision": precision_score(
+            all_labels, all_preds, average="macro", zero_division=0
+        ),
+        "recall": recall_score(all_labels, all_preds, average="macro", zero_division=0),
+        "f1_macro": f1_score(all_labels, all_preds, average="macro", zero_division=0),
     }
 
     return metrics
