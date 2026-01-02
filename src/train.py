@@ -78,7 +78,6 @@ def train(
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     criterion_ce = nn.CrossEntropyLoss()
 
-    # temperature = 0.07  # Temperature for Contrastive Loss
     epochs = config["train"][model_type]["epochs"]
 
     # History dictionary for convergence plot
@@ -206,10 +205,10 @@ if __name__ == "__main__":
     traffic_clip.to(device)
 
     # train original traffic clip model
-    patience = config["early_stopping"]["patience"]
+    patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
     delta = config["early_stopping"]["delta"]
     early_stopping_traffic_clip = EarlyStopping(
-        patience=patience, delta=delta, verbose=True, mode="max"
+        patience=patience_traffic_clip, delta=delta, verbose=True, mode="max"
     )
     logging.info("Starting training for TrafficCLIP")
     try:
@@ -247,9 +246,14 @@ if __name__ == "__main__":
     num_classes = sum(len(class_list) for class_list in traffic_cfg.values())
     optimized_traffic_clip = OptimizedTrafficCLIP(num_classes=num_classes)
     optimized_traffic_clip.to(device)
+
+    patience_traffic_clip_optimized = config["early_stopping"][
+        "optimized_traffic_clip"
+    ]["patience"]
+
     # train optimized traffic clip model
     early_stopping_optimized_traffic_clip = EarlyStopping(
-        patience=patience, delta=delta, verbose=True, mode="max"
+        patience=patience_traffic_clip_optimized, delta=delta, verbose=True, mode="max"
     )
     logging.info("Starting training for OptimizedTrafficCLIP")
     try:
