@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 def validate(model, val_loader, device):
     """
     Standardized Validation Function:
-    Calculates AC, Macro F1, PR, and RC using joint loss (CE + CL).
+    Calculates performance metrics using joint loss (CE + CL).
     """
     model.eval()
     all_preds = []
@@ -120,7 +120,7 @@ def train(
             scheduler.step()
 
         # Validation Phase
-        val_loss, val_acc, val_f1 = validate(model, val_loader, device)
+        val_loss, val_acc, val_pre, val_re, val_f1 = validate(model, val_loader, device)
 
         history["train_loss"].append(total_train_loss / len(train_loader))
         history["val_loss"].append(val_loss)
