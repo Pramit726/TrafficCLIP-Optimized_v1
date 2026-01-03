@@ -46,10 +46,10 @@ train:
 early_stopping:
   traffic_clip:
     patience: 20
-    delta: 0.01
+    delta: 0.001
   optimized_traffic_clip:
     patience: 10
-    delta: 0.001
+    delta: 0.01
   
 
 test:

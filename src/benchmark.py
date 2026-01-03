@@ -173,7 +173,7 @@ if __name__ == "__main__":
         check_point_path_optimized = (
             Path(__file__).parent.parent
             / "saved_models"
-            / "best_traffic_clip_optimized_model.pt"
+            / "best_optimized_traffic_clip_model.pt"
         )
         # load weights for trafficclip optimized model
         traffic_clip_optimized.load_state_dict(

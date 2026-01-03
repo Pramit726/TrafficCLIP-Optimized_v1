@@ -145,7 +145,8 @@ def plot_convergence(history, model_type):
 
 
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
-    cm = confusion_matrix(y_true, y_pred)
+    target_labels = np.arange(len(class_names))
+    cm = confusion_matrix(y_true, y_pred, labels=target_labels)
     plt.figure(figsize=(10, 8))
     sns.heatmap(
         cm,
@@ -157,7 +158,9 @@ def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
     )
     plt.xlabel("Predicted Label")
     plt.ylabel("True Label")
-    plt.title("Confusion Matrix: Performance on Similar Traffic Classes")
+    plt.title(
+        f"Confusion Matrix: Performance on Similar Traffic Classes - {model_type}"
+    )
     # save figure
     figure_path = Path(__file__).parent.parent.parent / "results" / "figures"
     figure_path.mkdir(parents=True, exist_ok=True)
