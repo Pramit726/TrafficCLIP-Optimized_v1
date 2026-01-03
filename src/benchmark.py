@@ -13,7 +13,7 @@ from src.utils.utils import load_config, plot_confusion_matrix, set_seed
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def test_and_evaluate(model, test_loader, device, num_runs=3):
+def test_and_evaluate(model, test_loader, device, model_type, num_runs=3):
     """
     Standardized Testing:
     1. Performs inference 3 times.
@@ -73,7 +73,10 @@ def test_and_evaluate(model, test_loader, device, num_runs=3):
 
     # Confusion Matrix for similar classes
     plot_confusion_matrix(
-        all_labels, best_preds, test_loader.dataset.dataset.class_names
+        all_labels,
+        best_preds,
+        test_loader.dataset.dataset.class_names,
+        model_type=model_type,
     )
 
 
@@ -140,7 +143,9 @@ if __name__ == "__main__":
 
     try:
         logging.info("Testing TrafficClip model")
-        test_and_evaluate(traffic_clip, test_loader_original, device)
+        test_and_evaluate(
+            traffic_clip, test_loader_original, device, model_type="TrafficClip"
+        )
     except Exception as e:
         logging.error(f"Error during testing TrafficClip model: {e}")
         raise
@@ -180,7 +185,12 @@ if __name__ == "__main__":
         raise
     try:
         logging.info("Testing TrafficClip Optimized model")
-        test_and_evaluate(traffic_clip_optimized, test_loader_optimized, device)
+        test_and_evaluate(
+            traffic_clip_optimized,
+            test_loader_optimized,
+            device,
+            model_type="TrafficClip_Optimized",
+        )
     except Exception as e:
         logging.error(f"Error during testing TrafficClip Optimized model: {e}")
         raise
