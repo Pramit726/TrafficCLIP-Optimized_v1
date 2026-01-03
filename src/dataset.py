@@ -4,7 +4,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset, random_split
+from sklearn.model_selection import train_test_split
+from torch.utils.data import DataLoader, Dataset, Subset
 from transformers import AutoTokenizer
 
 from src.utils.utils import load_config
@@ -61,8 +62,8 @@ class TrafficDataset(Dataset):
 
 def get_dataloader(npz_path, tokenizer, prompts, batch_size=64, max_length=64, seed=42):
     """
-    Creates Train, Validation, and Test loaders for the TrafficCLIP pipeline.
-    Splits: 70% Train, 15% Val, 15% Test
+    Creates Stratified Train, Validation, and Test loaders.
+    Ensures class distribution is preserved across all splits.
     """
     full_dataset = TrafficDataset(
         npz_path,
@@ -70,25 +71,42 @@ def get_dataloader(npz_path, tokenizer, prompts, batch_size=64, max_length=64, s
         tokenizer_name=tokenizer,
         max_length=max_length,
     )
-    total_size = len(full_dataset)
-    train_size = int(0.7 * total_size)
-    val_size = int(0.15 * total_size)
-    test_size = total_size - train_size - val_size
-    generator = torch.Generator().manual_seed(seed)
 
-    train_set, val_set, test_set = random_split(
-        full_dataset, [train_size, val_size, test_size], generator=generator
+    # Extract all labels to perform stratification
+    targets = [full_dataset[i]["label"] for i in range(len(full_dataset))]
+
+    # 70% Train, 30% for Val + Test
+    train_indices, temp_indices = train_test_split(
+        range(len(full_dataset)),
+        test_size=0.30,
+        stratify=targets,
+        random_state=seed,
     )
 
-    #  Create DataLoaders
+    # Split the 30% into 15% Val and 15% Test
+    temp_targets = [targets[i] for i in temp_indices]
+    val_indices, test_indices = train_test_split(
+        temp_indices,
+        test_size=0.50,  # Half of 30% is 15%
+        stratify=temp_targets,
+        random_state=seed,
+    )
+
+    # Create PyTorch Subsets using the stratified indices
+    train_set = Subset(full_dataset, train_indices)
+    val_set = Subset(full_dataset, val_indices)
+    test_set = Subset(full_dataset, test_indices)
+
+    # Create DataLoaders
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
-    logging.info(f"Total Samples: {total_size}")
-    logging.info(f"Training:      {len(train_set)} samples")
-    logging.info(f"Validation:    {len(val_set)} samples")
-    logging.info(f"Testing:       {len(test_set)} samples")
+    # Logging distribution
+    logging.info(f"Total Samples: {len(full_dataset)}")
+    logging.info(f"Stratified Training:   {len(train_set)} samples")
+    logging.info(f"Stratified Validation: {len(val_set)} samples")
+    logging.info(f"Stratified Testing:    {len(test_set)} samples")
 
     return train_loader, val_loader, test_loader
 

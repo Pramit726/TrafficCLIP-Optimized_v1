@@ -39,7 +39,7 @@ def test_and_evaluate(model, test_loader, device, num_runs=3):
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
 
-                logits = model(images, input_ids, attention_mask)
+                logits, _ = model(images, input_ids, attention_mask)
                 preds = torch.argmax(logits, dim=1)
 
                 preds_list.extend(preds.cpu().numpy())
@@ -47,9 +47,11 @@ def test_and_evaluate(model, test_loader, device, num_runs=3):
 
         # Calculate metrics for this pass
         acc = accuracy_score(labels_list, preds_list)
-        pr = precision_score(labels_list, preds_list, average="macro")
-        rc = recall_score(labels_list, preds_list, average="macro")
-        f1 = f1_score(labels_list, preds_list, average="macro")
+        pr = precision_score(
+            labels_list, preds_list, average="macro", zero_division=0.0
+        )
+        rc = recall_score(labels_list, preds_list, average="macro", zero_division=0.0)
+        f1 = f1_score(labels_list, preds_list, average="macro", zero_division=0.0)
 
         run_metrics.append([acc, pr, rc, f1])
 
@@ -137,6 +139,7 @@ if __name__ == "__main__":
         raise
 
     try:
+        logging.info("Testing TrafficClip model")
         test_and_evaluate(traffic_clip, test_loader_original, device)
     except Exception as e:
         logging.error(f"Error during testing TrafficClip model: {e}")
@@ -159,7 +162,7 @@ if __name__ == "__main__":
     # initialize trafficclip optimized model
     traffic_cfg = config["dataset"]["traffic"]["classes"]
     num_classes = sum(len(class_list) for class_list in traffic_cfg.values())
-    traffic_clip = OptimizedTrafficCLIP(num_classes=num_classes)
+    traffic_clip_optimized = OptimizedTrafficCLIP(num_classes=num_classes)
 
     try:
         check_point_path_optimized = (
@@ -168,15 +171,16 @@ if __name__ == "__main__":
             / "best_traffic_clip_optimized_model.pt"
         )
         # load weights for trafficclip optimized model
-        traffic_clip.load_state_dict(
+        traffic_clip_optimized.load_state_dict(
             torch.load(check_point_path_optimized, map_location=device)
         )
-        traffic_clip.to(device)
+        traffic_clip_optimized.to(device)
     except Exception as e:
         logging.error(f"Error loading TrafficClip Optimized model weights: {e}")
         raise
     try:
-        test_and_evaluate(traffic_clip, test_loader_optimized, device)
+        logging.info("Testing TrafficClip Optimized model")
+        test_and_evaluate(traffic_clip_optimized, test_loader_optimized, device)
     except Exception as e:
         logging.error(f"Error during testing TrafficClip Optimized model: {e}")
         raise
