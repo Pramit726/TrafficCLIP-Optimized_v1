@@ -175,14 +175,14 @@ if __name__ == "__main__":
         NPZ_PATH = config["paths"]["output_data_file"]
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]
-        SEED = 42
+        SEED = config["train"]["seed"]
         BATCH_SIZE = config["preprocess"]["batch_size"]
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
         raise
 
     # set seed for reproducibility
-    set_seed(42)
+    set_seed(SEED)
 
     # create dataloaders for TrafficClip
     try:

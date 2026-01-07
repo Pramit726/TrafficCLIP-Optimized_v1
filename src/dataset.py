@@ -1,5 +1,6 @@
 import logging
 import pathlib
+from collections import Counter
 from pathlib import Path
 
 import numpy as np
@@ -111,6 +112,15 @@ def get_dataloader(npz_path, tokenizer, prompts, batch_size=64, max_length=64, s
     return train_loader, val_loader, test_loader
 
 
+# Utility function to check class distribution in a DataLoader
+def check_distribution(loader, name):
+    all_labels = []
+    for batch in loader:
+        all_labels.extend(batch["label"].tolist())
+    counts = Counter(all_labels)
+    logging.info(f"{name} distribution: {dict(sorted(counts.items()))}")
+
+
 if __name__ == "__main__":
     config = load_config()
     try:
@@ -124,7 +134,7 @@ if __name__ == "__main__":
         TENSOR_DIR = Path(config["paths"]["tensors_dir"])
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]
-        SEED = 42
+        SEED = 62
         BATCH_SIZE = config["preprocess"]["batch_size"]
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
@@ -141,6 +151,10 @@ if __name__ == "__main__":
         )
 
         logging.info("DataLoaders created successfully.")
+        check_distribution(train_loader, "Train")
+        check_distribution(val_loader, "Validation")
+        check_distribution(test_loader, "Test")
+
     except Exception as e:
         logging.error(f"Error creating DataLoaders: {e}")
         raise

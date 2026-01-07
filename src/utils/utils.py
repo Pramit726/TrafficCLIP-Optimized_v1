@@ -146,7 +146,7 @@ def plot_convergence(history, model_type):
 
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
     target_labels = np.arange(len(class_names))
-    cm = confusion_matrix(y_true, y_pred, labels=target_labels)
+    cm = confusion_matrix(y_true, y_pred, labels=target_labels, normalize="all")
     plt.figure(figsize=(10, 8))
     sns.heatmap(
         cm,
