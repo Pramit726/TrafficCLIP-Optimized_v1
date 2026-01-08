@@ -2,6 +2,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
@@ -13,7 +14,7 @@ from src.utils.utils import load_config, plot_confusion_matrix, set_seed
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def test_and_evaluate(model, device, model_type, config, num_runs=3):
+def test_and_evaluate(model, device, model_type, config, num_runs=3, seed=42):
     """
     Standardized Testing for M.Tech Thesis:
     1. Regenerates a stratified test_loader for each pass using different seeds.
@@ -43,7 +44,7 @@ def test_and_evaluate(model, device, model_type, config, num_runs=3):
 
     for run in range(num_runs):
         # Generate a unique seed for this specific run
-        current_seed = 42 + run
+        current_seed = seed + run
         set_seed(current_seed)
 
         # Recreate dataloader with the new seed to get a different stratified test split
@@ -103,6 +104,16 @@ def test_and_evaluate(model, device, model_type, config, num_runs=3):
     logging.info(f"Avg Recall (RC):    {avg_metrics[2]:.4f} ± {std_metrics[2]:.4f}")
     logging.info(f"Avg Macro F1 Score: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
 
+    # save run metrics to pandas dataframe
+    results_path = Path(__file__).parent.parent / "results" / "metrics"
+    results_path.mkdir(parents=True, exist_ok=True)
+    results_file = results_path / f"{model_type}_test_results.csv"
+    df = pd.DataFrame(
+        run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
+    )
+    df.to_csv(results_file, index_label="Run")
+    logging.info(f"Saved detailed run metrics to {results_file}")
+
     plot_confusion_matrix(all_labels, best_preds, class_names, model_type=model_type)
 
 
@@ -117,8 +128,8 @@ if __name__ == "__main__":
         Path(__file__).parent.parent / "saved_models" / "best_traffic_clip_model.pt"
     )
     traffic_clip.load_state_dict(torch.load(path_orig, map_location=device))
-
-    test_and_evaluate(traffic_clip, device, "TrafficClip", config)
+    test_seed = config["test"].get("seed", 42)
+    test_and_evaluate(traffic_clip, device, "TrafficClip", config, seed=test_seed)
 
     # Evaluate TrafficClip Optimized
     traffic_cfg = config["dataset"]["traffic"]["classes"]
@@ -131,4 +142,6 @@ if __name__ == "__main__":
     )
     opt_model.load_state_dict(torch.load(path_opt, map_location=device))
 
-    test_and_evaluate(opt_model, device, "TrafficClip_Optimized", config)
+    test_and_evaluate(
+        opt_model, device, "TrafficClip_Optimized", config, seed=test_seed
+    )

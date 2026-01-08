@@ -146,12 +146,12 @@ def plot_convergence(history, model_type):
 
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
     target_labels = np.arange(len(class_names))
-    cm = confusion_matrix(y_true, y_pred, labels=target_labels, normalize="all")
+    cm = confusion_matrix(y_true, y_pred, labels=target_labels)
     plt.figure(figsize=(10, 8))
     sns.heatmap(
         cm,
         annot=True,
-        fmt="d",
+        fmt=".1f",  # Changed from 'd' to '.1f' to handle float values
         cmap="Blues",
         xticklabels=class_names,
         yticklabels=class_names,
