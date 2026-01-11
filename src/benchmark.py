@@ -14,7 +14,9 @@ from src.utils.utils import load_config, plot_confusion_matrix, set_seed
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def test_and_evaluate(model, device, model_type, config, num_runs=3, seed=42):
+def test_and_evaluate(
+    model, device, model_type, config, use_dynamic_prompts, num_runs=3, seed=42
+):
     """
     Standardized Testing for M.Tech Thesis:
     1. Regenerates a stratified test_loader for each pass using different seeds.
@@ -28,11 +30,11 @@ def test_and_evaluate(model, device, model_type, config, num_runs=3, seed=42):
     all_labels = None
 
     # Extract config parameters for dataloader recreation
-    SEMANTIC_PROMPTS = config["prompts"]
-    template = "A network traffic grey photo of {}"
-    ORIGINAL_PROMPTS = {
-        label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
-    }
+    # SEMANTIC_PROMPTS = config["prompts"]
+    # template = "A network traffic grey photo of {}"
+    # ORIGINAL_PROMPTS = {
+    #     label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
+    # }
     NPZ_PATH = config["paths"]["output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
@@ -51,10 +53,11 @@ def test_and_evaluate(model, device, model_type, config, num_runs=3, seed=42):
         _, _, test_loader = get_dataloader(
             npz_path=NPZ_PATH,
             tokenizer=TOKENIZER_NAME,
-            prompts=ORIGINAL_PROMPTS,
+            # prompts=ORIGINAL_PROMPTS,
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=current_seed,
+            use_dynamic_prompts=use_dynamic_prompts,
         )
 
         preds_list = []
@@ -129,7 +132,14 @@ if __name__ == "__main__":
     )
     traffic_clip.load_state_dict(torch.load(path_orig, map_location=device))
     test_seed = config["test"].get("seed", 42)
-    test_and_evaluate(traffic_clip, device, "TrafficClip", config, seed=test_seed)
+    test_and_evaluate(
+        traffic_clip,
+        device,
+        "TrafficClip",
+        config,
+        use_dynamic_prompts=False,
+        seed=test_seed,
+    )
 
     # Evaluate TrafficClip Optimized
     traffic_cfg = config["dataset"]["traffic"]["classes"]
@@ -143,5 +153,10 @@ if __name__ == "__main__":
     opt_model.load_state_dict(torch.load(path_opt, map_location=device))
 
     test_and_evaluate(
-        opt_model, device, "TrafficClip_Optimized", config, seed=test_seed
+        opt_model,
+        device,
+        "TrafficClip_Optimized",
+        config,
+        use_dynamic_prompts=True,
+        seed=test_seed,
     )
