@@ -18,7 +18,7 @@ from src.utils.utils import load_config, plot_convergence, set_seed
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(model, val_loader, device):
+def validate(model, val_loader, device, lambda_cl):
     """
     Standardized Validation Function:
     Calculates performance metrics using joint loss (CE + CL).
@@ -45,7 +45,7 @@ def validate(model, val_loader, device):
             v_f = model.get_vision_features(images)
             loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
-            loss = loss_ce + loss_cl
+            loss = loss_ce + (lambda_cl * loss_cl)
             total_val_loss += loss.item()
 
             # Predictions and Labels
@@ -68,7 +68,14 @@ def validate(model, val_loader, device):
 
 
 def train(
-    model, model_type, train_loader, val_loader, config, device, early_stopping=None
+    model,
+    model_type,
+    train_loader,
+    val_loader,
+    config,
+    device,
+    lambda_cl,
+    early_stopping=None,
 ):
     """
     Standardized Training Loop:
@@ -110,7 +117,7 @@ def train(
             v_f = model.get_vision_features(images)
             loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
-            loss = loss_ce + loss_cl
+            loss = loss_ce + (lambda_cl * loss_cl)
             loss.backward()
             optimizer.step()
             total_train_loss += loss.item()
@@ -119,12 +126,12 @@ def train(
             scheduler.step()
 
         # Validation Phase
-        val_metrics = validate(model, val_loader, device)
+        val_metrics = validate(model, val_loader, device, lambda_cl)
 
         val_loss = val_metrics["loss"]
         val_acc = val_metrics["accuracy"]
-        val_pre = val_metrics["precision"]
-        val_re = val_metrics["recall"]
+        # val_pre = val_metrics["precision"]
+        # val_re = val_metrics["recall"]
         val_f1 = val_metrics["f1_macro"]
 
         history["train_loss"].append(total_train_loss / len(train_loader))
@@ -147,7 +154,7 @@ def train(
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
             best_f1 = val_f1
-            torch.save(model.state_dict(), model_path / f"best_{model_type}_model.pt")
+            torch.save(model.state_dict(), model_path / f"best_{model_type}_model_m.pt")
             logging.info(f"Best model saved with F1: {val_f1:.4f}")
 
     plot_convergence(history, model_type)
@@ -167,16 +174,18 @@ if __name__ == "__main__":
 
     try:
         # Parameter Extraction
-        SEMANTIC_PROMPTS = config["prompts"]
-        template = "A network traffic grey photo of {}"
-        ORIGINAL_PROMPTS = {
-            label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
-        }
+        # SEMANTIC_PROMPTS = config["prompts"]
+        # template = "A network traffic grey photo of {}"
+        # ORIGINAL_PROMPTS = {
+        #     label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
+        # }
         NPZ_PATH = config["paths"]["output_data_file"]
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]
         SEED = config["train"]["seed"]
         BATCH_SIZE = config["preprocess"]["batch_size"]
+        LAMBDA_CL_ORIGINAL = config["train"]["traffic_clip"]["lambda_cl"]
+        LAMBDA_CL_OPTIMIZED = config["train"]["optimized_traffic_clip"]["lambda_cl"]
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
         raise
@@ -185,55 +194,56 @@ if __name__ == "__main__":
     set_seed(SEED)
 
     # create dataloaders for TrafficClip
-    try:
-        train_loader_original, val_loader_original, _ = get_dataloader(
-            npz_path=NPZ_PATH,
-            tokenizer=TOKENIZER_NAME,
-            prompts=ORIGINAL_PROMPTS,
-            batch_size=BATCH_SIZE,
-            max_length=MAX_LENGTH,
-            seed=SEED,
-        )
+    # try:
+    #     train_loader_original, val_loader_original, _ = get_dataloader(
+    #         npz_path=NPZ_PATH,
+    #         tokenizer=TOKENIZER_NAME,
+    #         # prompts=ORIGINAL_PROMPTS,
+    #         batch_size=BATCH_SIZE,
+    #         max_length=MAX_LENGTH,
+    #         seed=SEED,
+    #     )
 
-        logging.info("DataLoaders created successfully for TrafficClip.")
-    except Exception as e:
-        logging.error(f"Error creating DataLoaders for TrafficClip: {e}")
-        raise
+    #     logging.info("DataLoaders created successfully for TrafficClip.")
+    # except Exception as e:
+    #     logging.error(f"Error creating DataLoaders for TrafficClip: {e}")
+    #     raise
 
-    # initialize original trafficclip model
-    traffic_clip = TrafficCLIP()
-    traffic_clip.to(device)
+    # # initialize original trafficclip model
+    # traffic_clip = TrafficCLIP()
+    # traffic_clip.to(device)
 
-    # train original traffic clip model
-    patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
-    delta_traffic_clip = config["early_stopping"]["traffic_clip"]["delta"]
-    early_stopping_traffic_clip = EarlyStopping(
-        patience=patience_traffic_clip,
-        delta=delta_traffic_clip,
-        verbose=True,
-        mode="max",
-    )
-    logging.info("Starting training for TrafficCLIP")
-    try:
-        train(
-            model=traffic_clip,
-            model_type="traffic_clip",
-            train_loader=train_loader_original,
-            val_loader=val_loader_original,
-            config=config,
-            device=device,
-            early_stopping=early_stopping_traffic_clip,
-        )
-    except Exception as e:
-        logging.error(f"Error during training TrafficCLIP: {e}")
-        raise
+    # # train original traffic clip model
+    # patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
+    # delta_traffic_clip = config["early_stopping"]["traffic_clip"]["delta"]
+    # early_stopping_traffic_clip = EarlyStopping(
+    #     patience=patience_traffic_clip,
+    #     delta=delta_traffic_clip,
+    #     verbose=True,
+    #     mode="max",
+    # )
+    # logging.info("Starting training for TrafficCLIP")
+    # try:
+    #     train(
+    #         model=traffic_clip,
+    #         model_type="traffic_clip",
+    #         train_loader=train_loader_original,
+    #         val_loader=val_loader_original,
+    #         config=config,
+    #         device=device,
+    #         lambda_cl=LAMBDA_CL_ORIGINAL,
+    #         early_stopping=early_stopping_traffic_clip,
+    #     )
+    # except Exception as e:
+    #     logging.error(f"Error during training TrafficCLIP: {e}")
+    #     raise
 
     # create dataloaders for TrafficClip Optimized
     try:
         train_loader_optimized, val_loader_optimized, _ = get_dataloader(
             npz_path=NPZ_PATH,
             tokenizer=TOKENIZER_NAME,
-            prompts=SEMANTIC_PROMPTS,
+            # prompts=SEMANTIC_PROMPTS,
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=SEED,
@@ -273,6 +283,7 @@ if __name__ == "__main__":
             val_loader=val_loader_optimized,
             config=config,
             device=device,
+            lambda_cl=LAMBDA_CL_OPTIMIZED,
             early_stopping=early_stopping_optimized_traffic_clip,
         )
     except Exception as e:

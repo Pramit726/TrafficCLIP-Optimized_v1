@@ -40,9 +40,11 @@ train:
   traffic_clip:
     batch_size: 64
     epochs: 100
+    lambda_cl : 1.0
   optimized_traffic_clip:
     batch_size: 64
     epochs: 100
+    lambda_cl : 2.0
   
 early_stopping:
   traffic_clip:

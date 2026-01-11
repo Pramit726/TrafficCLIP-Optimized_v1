@@ -107,7 +107,7 @@ def test_and_evaluate(model, device, model_type, config, num_runs=3, seed=42):
     # save run metrics to pandas dataframe
     results_path = Path(__file__).parent.parent / "results" / "metrics"
     results_path.mkdir(parents=True, exist_ok=True)
-    results_file = results_path / f"{model_type}_test_results.csv"
+    results_file = results_path / f"{model_type}_test_results_m.csv"
     df = pd.DataFrame(
         run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
     )

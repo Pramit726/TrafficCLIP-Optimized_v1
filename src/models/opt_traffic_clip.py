@@ -19,13 +19,18 @@ class NonLinearFusionHead(nn.Module):
     """
 
     def __init__(self, num_classes, input_dim=2048, hidden_dim=512):
+        """
+        Phase 3 Architecture:
+        - LayerNorm for multimodal stability
+        - Dropout (0.4) for regularization against session-level overfitting
+        """
         super().__init__()
         self.mlp = nn.Sequential(
             # Layer 1: Expansion and Non-linearity
             nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.4),
             # Layer 2: Classification Logits
             nn.Linear(hidden_dim, num_classes),
         )
