@@ -194,49 +194,50 @@ if __name__ == "__main__":
     set_seed(SEED)
 
     # create dataloaders for TrafficClip
-    # try:
-    #     train_loader_original, val_loader_original, _ = get_dataloader(
-    #         npz_path=NPZ_PATH,
-    #         tokenizer=TOKENIZER_NAME,
-    #         # prompts=ORIGINAL_PROMPTS,
-    #         batch_size=BATCH_SIZE,
-    #         max_length=MAX_LENGTH,
-    #         seed=SEED,
-    #     )
+    try:
+        train_loader_original, val_loader_original, _ = get_dataloader(
+            npz_path=NPZ_PATH,
+            tokenizer=TOKENIZER_NAME,
+            # prompts=ORIGINAL_PROMPTS,
+            batch_size=BATCH_SIZE,
+            max_length=MAX_LENGTH,
+            seed=SEED,
+            use_dynamic_prompts=False,
+        )
 
-    #     logging.info("DataLoaders created successfully for TrafficClip.")
-    # except Exception as e:
-    #     logging.error(f"Error creating DataLoaders for TrafficClip: {e}")
-    #     raise
+        logging.info("DataLoaders created successfully for TrafficClip.")
+    except Exception as e:
+        logging.error(f"Error creating DataLoaders for TrafficClip: {e}")
+        raise
 
-    # # initialize original trafficclip model
-    # traffic_clip = TrafficCLIP()
-    # traffic_clip.to(device)
+    # initialize original trafficclip model
+    traffic_clip = TrafficCLIP()
+    traffic_clip.to(device)
 
-    # # train original traffic clip model
-    # patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
-    # delta_traffic_clip = config["early_stopping"]["traffic_clip"]["delta"]
-    # early_stopping_traffic_clip = EarlyStopping(
-    #     patience=patience_traffic_clip,
-    #     delta=delta_traffic_clip,
-    #     verbose=True,
-    #     mode="max",
-    # )
-    # logging.info("Starting training for TrafficCLIP")
-    # try:
-    #     train(
-    #         model=traffic_clip,
-    #         model_type="traffic_clip",
-    #         train_loader=train_loader_original,
-    #         val_loader=val_loader_original,
-    #         config=config,
-    #         device=device,
-    #         lambda_cl=LAMBDA_CL_ORIGINAL,
-    #         early_stopping=early_stopping_traffic_clip,
-    #     )
-    # except Exception as e:
-    #     logging.error(f"Error during training TrafficCLIP: {e}")
-    #     raise
+    # train original traffic clip model
+    patience_traffic_clip = config["early_stopping"]["traffic_clip"]["patience"]
+    delta_traffic_clip = config["early_stopping"]["traffic_clip"]["delta"]
+    early_stopping_traffic_clip = EarlyStopping(
+        patience=patience_traffic_clip,
+        delta=delta_traffic_clip,
+        verbose=True,
+        mode="max",
+    )
+    logging.info("Starting training for TrafficCLIP")
+    try:
+        train(
+            model=traffic_clip,
+            model_type="traffic_clip",
+            train_loader=train_loader_original,
+            val_loader=val_loader_original,
+            config=config,
+            device=device,
+            lambda_cl=LAMBDA_CL_ORIGINAL,
+            early_stopping=early_stopping_traffic_clip,
+        )
+    except Exception as e:
+        logging.error(f"Error during training TrafficCLIP: {e}")
+        raise
 
     # create dataloaders for TrafficClip Optimized
     try:
@@ -247,6 +248,7 @@ if __name__ == "__main__":
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=SEED,
+            use_dynamic_prompts=True,
         )
 
         logging.info("DataLoaders created successfully for TrafficClip Optimized.")
