@@ -3,6 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import scapy.all as scapy
+import scipy
 
 from src.utils.utils import load_config
 
@@ -56,83 +57,104 @@ def extract_flows(packets) -> dict[tuple, list[scapy.Packet]]:
     return flows
 
 
-def flow_to_image(flow_packets, size=784) -> np.ndarray:
+def calculate_stats(flow_pkts, raw_bytes):
     """
-    Converts a flow's packets to a normalized 28x28 image array.
+    Calculates physical flow characteristics: Mean IAT, Jitter, and Byte Entropy.
+    Calculated before truncation/masking for maximum accuracy.
     """
+    # 1. Calculate Inter-Arrival Times (IAT)
+    timestamps = [float(p.time) for p in flow_pkts]
+    if len(timestamps) > 1:
+        iats = np.diff(timestamps)
+        # Convert to milliseconds for the prompt
+        mean_iat = np.mean(iats) * 1000
+        jitter = np.std(iats) * 1000
+    else:
+        mean_iat, jitter = 0.0, 0.0
+
+    # 2. Calculate Byte Entropy (Shannon Entropy)
+    if len(raw_bytes) > 0:
+        counts = np.bincount(np.frombuffer(raw_bytes, dtype=np.uint8), minlength=256)
+        probs = counts / len(raw_bytes)
+        entropy = scipy.stats.entropy(probs, base=2)
+    else:
+        entropy = 0.0
+
+    return mean_iat, jitter, entropy
+
+
+def flow_to_image_and_stats(flow_packets, size=784):
+    """
+    Extracts stats and converts flow to a 54-byte masked image.
+    """
+    # Step A: Get FULL raw bytes for stats
     raw_bytes = b"".join([scapy.raw(p) for p in flow_packets])
 
+    # Step B: Physics-Informed Calculation
+    mean_iat, jitter, entropy = calculate_stats(flow_packets, raw_bytes)
+
+    # Step C: Prepare Image Buffer (Truncate/Pad)
     buffer = bytearray(raw_bytes[:size])
     if len(buffer) < size:
         buffer.extend(b"\x00" * (size - len(buffer)))
 
-    # Anonymize IPv4 addresses (bytes 12–19)
-    for i in range(12, 20):
+    # Step D: 54-Byte Header Masking (Phase 1 Fix)
+    # Masking Eth(14) + IP(20) + TCP(20) to prevent hardware fingerprints
+    for i in range(0, 54):
         buffer[i] = 0x00
 
     img = np.frombuffer(buffer, dtype=np.uint8).astype(np.float32) / 255.0
+    return img.reshape(1, 28, 28), [mean_iat, jitter, entropy]
 
-    return img.reshape(1, 28, 28)
 
-
-def process_class_folder(
-    folder: Path, label: int, samples_per_class: int
-) -> tuple[list[np.ndarray], list[int]]:
-    """
-    Processes all PCAP files in a class folder and returns images and labels.
-    """
-    images, labels = [], []
+def process_class_folder(folder: Path, label: int, samples_per_class: int):
+    images, labels, metadata = [], [], []
     count = 0
-
     logging.info(f"Processing Class: {folder.name}")
 
     for pcap_file in folder.glob("*.pcap"):
         if count >= samples_per_class:
             break
-
-        packets = read_pcap(pcap_file)
-        if packets is None:
+        try:
+            packets = scapy.rdpcap(str(pcap_file))
+        except:
             continue
 
         flows = extract_flows(packets)
-
         for flow_packets in flows.values():
             if count >= samples_per_class:
                 break
 
-            img = flow_to_image(flow_packets)
+            img, stats = flow_to_image_and_stats(flow_packets)
             images.append(img)
             labels.append(label)
+            metadata.append(stats)
             count += 1
 
-    return images, labels
+    return images, labels, metadata
 
 
-def process_pcaps_to_numpy(
-    data_dir: Path, output_file: Path, samples_per_class=1500
-) -> None:
-    """
-    Reads PCAPs, extracts 784 bytes per flow, anonymizes IPs,
-    and saves as a compressed NumPy archive (.npz).
-    """
-    all_images = []
-    all_labels = []
-
+def process_pcaps_to_numpy(data_dir: Path, output_file: Path, samples_per_class=1500):
+    all_images, all_labels, all_metadata = [], [], []
     class_folders, label_map = get_class_folders(data_dir)
 
     for folder in class_folders:
         label = label_map[folder.name]
-        imgs, lbls = process_class_folder(folder, label, samples_per_class)
+        imgs, lbls, meta = process_class_folder(folder, label, samples_per_class)
         all_images.extend(imgs)
         all_labels.extend(lbls)
+        all_metadata.extend(meta)
 
-    x = np.array(all_images)
-    y = np.array(all_labels)
+    # Save with 'm' key for Phase 2 Dynamic Prompting
+    np.savez_compressed(
+        output_file,
+        x=np.array(all_images),
+        y=np.array(all_labels),
+        m=np.array(all_metadata),
+        labels=list(label_map.keys()),
+    )
 
-    np.savez_compressed(output_file, x=x, y=y, labels=list(label_map.keys()))
-
-    logging.info(f"Saved {x.shape[0]} samples")
-    logging.info(f"Final shape: {x.shape} (N, C, H, W)")
+    logging.info(f"Successfully saved {len(all_images)} samples to {output_file}")
 
 
 if __name__ == "__main__":
