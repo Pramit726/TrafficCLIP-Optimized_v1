@@ -128,7 +128,7 @@ if __name__ == "__main__":
     # Evaluate TrafficClip
     traffic_clip = TrafficCLIP().to(device)
     path_orig = (
-        Path(__file__).parent.parent / "saved_models" / "best_traffic_clip_model.pt"
+        Path(__file__).parent.parent / "saved_models" / "best_traffic_clip_model_m.pt"
     )
     traffic_clip.load_state_dict(torch.load(path_orig, map_location=device))
     test_seed = config["test"].get("seed", 42)
@@ -148,7 +148,7 @@ if __name__ == "__main__":
     path_opt = (
         Path(__file__).parent.parent
         / "saved_models"
-        / "best_optimized_traffic_clip_model.pt"
+        / "best_optimized_traffic_clip_model_m.pt"
     )
     opt_model.load_state_dict(torch.load(path_opt, map_location=device))
 
