@@ -17,17 +17,17 @@ dataset:
         - name: "Cridex"
           extension: ".7z"
 
-prompts:
-  BitTorrent : "Sparse but highly concurrent network flow with massive peer-to-peer connection establishment and aggressive packet-size distribution for distributed data chunk retrieval."
-  Cridex: "High-entropy HTTPS traffic with periodic beaconing and bursty command-and-control synchronization, characterized by small outbound packets and large encrypted payload updates."
-  Gmail : "High-volume TLS traffic with variable throughput and large packet length variance, typical of browser-based webmail synchronization and interactive session updates."
-  Skype : "Constant-bitrate UDP streaming with low jitter and symmetric flow distribution, representing real-time peer-to-peer encrypted media communication and synchronization."
-  Tinba : "Compact, low-latency UDP-like behavior over TCP, exhibiting frequent polling with very small packet sizes and highly consistent inter-arrival times for lightweight synchronization."
-  Zeus  : "Persistent TCP connection with low throughput and irregular bursts, showing botnet communication patterns and fragmented data exfiltration via non-standard HTTP headers."
+# prompts:
+#   BitTorrent : "Sparse but highly concurrent network flow with massive peer-to-peer connection establishment and aggressive packet-size distribution for distributed data chunk retrieval."
+#   Cridex: "High-entropy HTTPS traffic with periodic beaconing and bursty command-and-control synchronization, characterized by small outbound packets and large encrypted payload updates."
+#   Gmail : "High-volume TLS traffic with variable throughput and large packet length variance, typical of browser-based webmail synchronization and interactive session updates."
+#   Skype : "Constant-bitrate UDP streaming with low jitter and symmetric flow distribution, representing real-time peer-to-peer encrypted media communication and synchronization."
+#   Tinba : "Compact, low-latency UDP-like behavior over TCP, exhibiting frequent polling with very small packet sizes and highly consistent inter-arrival times for lightweight synchronization."
+#   Zeus  : "Persistent TCP connection with low throughput and irregular bursts, showing botnet communication patterns and fragmented data exfiltration via non-standard HTTP headers."
 
 paths:
   raw_data_dir: "data/raw/"
-  output_data_file: "data/processed/traffic_dataset.npz"
+  output_data_file: "data/processed/traffic_dataset_metadata.npz"
   tensors_dir: "data/tensors/"
 
 preprocess:
