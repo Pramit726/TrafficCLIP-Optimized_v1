@@ -151,7 +151,7 @@ def plot_convergence(history, model_type, save_path: Path = None):
     plt.close()
 
 
-def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
+def plot_confusion_matrix(y_true, y_pred, class_names, model_type, model_version):
     target_labels = np.arange(len(class_names))
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
     plt.figure(figsize=(10, 8))
@@ -169,9 +169,11 @@ def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
         f"Confusion Matrix: Performance on Similar Traffic Classes - {model_type}"
     )
     # save figure
-    figure_path = Path(__file__).parent.parent.parent / "results" / "figures"
+    figure_path = (
+        Path(__file__).parent.parent.parent / "results" / "figures" / model_version
+    )
     figure_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(figure_path / f"{model_type}_confusion_matrix_m.png")
+    plt.savefig(figure_path / f"{model_type}_confusion_matrix.png")
     plt.show()
 
 

@@ -92,9 +92,10 @@ def train(
     best_f1 = 0.0
     model_path = (
         Path(__file__).parent.parent
-        # / "saved_models"
         / Path("experiments")
-        / f"{model_type}_L{lambda_cl}"
+        / Path(model_version)
+        # / f"{model_type}_L{lambda_cl}"
+        / model_type
     )
     model_path.mkdir(parents=True, exist_ok=True)
 
@@ -159,6 +160,7 @@ def train(
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
             best_f1 = val_f1
+            logging.info(model_path)
             torch.save(model.state_dict(), model_path / "best_model.pt")
             logging.info(f"Best model saved with F1: {val_f1:.4f}")
 
@@ -179,12 +181,6 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     try:
-        # Parameter Extraction
-        # SEMANTIC_PROMPTS = config["prompts"]
-        # template = "A network traffic grey photo of {}"
-        # ORIGINAL_PROMPTS = {
-        #     label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
-        # }
         NPZ_PATH = config["paths"]["output_data_file"]
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]

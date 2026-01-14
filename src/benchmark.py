@@ -15,7 +15,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
 def test_and_evaluate(
-    model, device, model_type, config, use_dynamic_prompts, num_runs=3, seed=42
+    model,
+    device,
+    model_type,
+    model_version,
+    config,
+    use_dynamic_prompts,
+    num_runs=3,
+    seed=42,
 ):
     """
     Standardized Testing for M.Tech Thesis:
@@ -29,20 +36,12 @@ def test_and_evaluate(
     best_preds = None
     all_labels = None
 
-    # Extract config parameters for dataloader recreation
-    # SEMANTIC_PROMPTS = config["prompts"]
-    # template = "A network traffic grey photo of {}"
-    # ORIGINAL_PROMPTS = {
-    #     label: template.format(label) for label in SEMANTIC_PROMPTS.keys()
-    # }
-    NPZ_PATH = config["paths"]["output_data_file"]
+    NPZ_PATH = config["paths"]["mini_output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
-    logging.info(
-        f"Starting multi-seed evaluation for {model_type} ({num_runs} passes)..."
-    )
+    logging.info(f"Starting evaluation for {model_type} ({num_runs} passes)")
 
     for run in range(num_runs):
         # Generate a unique seed for this specific run
@@ -101,23 +100,29 @@ def test_and_evaluate(
     avg_metrics = np.mean(run_metrics, axis=0)
     std_metrics = np.std(run_metrics, axis=0)
 
-    logging.info(f"--- Final Results for {model_type} ---")
+    logging.info(f"Final Results for {model_type}")
     logging.info(f"Avg Accuracy (AC):  {avg_metrics[0]:.4f} ± {std_metrics[0]:.4f}")
     logging.info(f"Avg Precision (PR): {avg_metrics[1]:.4f} ± {std_metrics[1]:.4f}")
     logging.info(f"Avg Recall (RC):    {avg_metrics[2]:.4f} ± {std_metrics[2]:.4f}")
     logging.info(f"Avg Macro F1 Score: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
 
     # save run metrics to pandas dataframe
-    results_path = Path(__file__).parent.parent / "results" / "metrics"
+    results_path = Path(__file__).parent.parent / "results" / "metrics" / model_version
     results_path.mkdir(parents=True, exist_ok=True)
-    results_file = results_path / f"{model_type}_test_results_m.csv"
+    results_file = results_path / f"{model_type}_test_results.csv"
     df = pd.DataFrame(
         run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
     )
     df.to_csv(results_file, index_label="Run")
     logging.info(f"Saved detailed run metrics to {results_file}")
 
-    plot_confusion_matrix(all_labels, best_preds, class_names, model_type=model_type)
+    plot_confusion_matrix(
+        all_labels,
+        best_preds,
+        class_names,
+        model_type=model_type,
+        model_version=model_version,
+    )
 
 
 if __name__ == "__main__":
@@ -128,7 +133,7 @@ if __name__ == "__main__":
     # Evaluate TrafficClip
     traffic_clip = TrafficCLIP().to(device)
     path_orig = (
-        Path(__file__).parent.parent / "saved_models" / "best_traffic_clip_model_m.pt"
+        Path(__file__).parent.parent / "saved_models" / "best_traffic_clip_model.pt"
     )
     traffic_clip.load_state_dict(torch.load(path_orig, map_location=device))
     test_seed = config["test"].get("seed", 42)
@@ -148,7 +153,7 @@ if __name__ == "__main__":
     path_opt = (
         Path(__file__).parent.parent
         / "saved_models"
-        / "best_optimized_traffic_clip_model_m.pt"
+        / "best_optimized_traffic_clip_model.pt"
     )
     opt_model.load_state_dict(torch.load(path_opt, map_location=device))
 
