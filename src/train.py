@@ -1,5 +1,4 @@
 import logging
-import random
 from pathlib import Path
 
 import numpy as np
@@ -69,6 +68,7 @@ def validate(model, val_loader, device, lambda_cl):
 
 def train(
     model,
+    model_version,
     model_type,
     train_loader,
     val_loader,
@@ -85,12 +85,17 @@ def train(
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
     criterion_ce = nn.CrossEntropyLoss()
 
-    epochs = config["train"][model_type]["epochs"]
+    epochs = config["train"][model_version]["epochs"]
 
     # History dictionary for convergence plot
     history = {"train_loss": [], "val_loss": [], "val_f1": []}
     best_f1 = 0.0
-    model_path = Path(__file__).parent.parent / "saved_models"
+    model_path = (
+        Path(__file__).parent.parent
+        # / "saved_models"
+        / Path("experiments")
+        / f"{model_type}_L{lambda_cl}"
+    )
     model_path.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(epochs):
@@ -154,10 +159,11 @@ def train(
         # Save the best model based on Macro F1 score
         if val_f1 > best_f1:
             best_f1 = val_f1
-            torch.save(model.state_dict(), model_path / f"best_{model_type}_model_m.pt")
+            torch.save(model.state_dict(), model_path / "best_model.pt")
             logging.info(f"Best model saved with F1: {val_f1:.4f}")
 
-    plot_convergence(history, model_type)
+    plot_convergence(history, model_type, save_path=model_path)
+    return best_f1
 
 
 if __name__ == "__main__":

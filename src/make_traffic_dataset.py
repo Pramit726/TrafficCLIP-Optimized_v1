@@ -162,5 +162,7 @@ if __name__ == "__main__":
 
     RAW_DATA_PATH = Path(config["paths"]["raw_data_dir"])
     OUTPUT_FILE = Path(config["paths"]["output_data_file"])
+    MINI_OUTPUT_FILE = Path(config["paths"]["mini_output_data_file"])
 
-    process_pcaps_to_numpy(RAW_DATA_PATH, OUTPUT_FILE, samples_per_class=1500)
+    # process_pcaps_to_numpy(RAW_DATA_PATH, OUTPUT_FILE, samples_per_class=1500)
+    process_pcaps_to_numpy(RAW_DATA_PATH, MINI_OUTPUT_FILE, samples_per_class=10)

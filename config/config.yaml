@@ -27,6 +27,7 @@ dataset:
 
 paths:
   raw_data_dir: "data/raw/"
+  mini_output_data_file: "data/processed/traffic_dataset_metadata_mini.npz"
   output_data_file: "data/processed/traffic_dataset_metadata.npz"
   tensors_dir: "data/tensors/"
 
@@ -37,20 +38,20 @@ preprocess:
   
 train:
   seed : 63
-  traffic_clip:
+  original:
     batch_size: 64
-    epochs: 100
+    epochs: 2
     lambda_cl : 1.0
-  optimized_traffic_clip:
+  optimized:
     batch_size: 64
-    epochs: 100
+    epochs: 2
     lambda_cl : 2.0
   
 early_stopping:
-  traffic_clip:
+  original:
     patience: 20
     delta: 0.001
-  optimized_traffic_clip:
+  optimized:
     patience: 10
     delta: 0.01
   

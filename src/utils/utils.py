@@ -111,7 +111,14 @@ def get_metrics(true, pred):
     return mae, mse, rmse, mape
 
 
-def plot_convergence(history, model_type):
+def plot_convergence(history, model_type, save_path: Path = None):
+    """
+    Plots training and validation loss and F1 score over epochs.
+    Parameters:
+        history (dict): Dictionary containing 'train_loss', 'val_loss', and 'val_f1' lists.
+        model_type (str): Type of the model for labeling the plots.
+        save_path (Path, optional): Path to save the figure. If None, saves to default location.
+    """
     epochs = range(1, len(history["train_loss"]) + 1)
 
     plt.figure(figsize=(12, 5))
@@ -138,10 +145,10 @@ def plot_convergence(history, model_type):
     plt.tight_layout()
 
     # save figure
-    figure_path = Path(__file__).parent.parent.parent / "results" / "figures"
-    figure_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(figure_path / f"{model_type}_convergence.png")
-    plt.show()
+    if save_path is None:
+        save_path = Path(__file__).parent.parent.parent / "results" / "figures"
+    plt.savefig(save_path / f"{model_type}_convergence.png")
+    plt.close()
 
 
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type):
