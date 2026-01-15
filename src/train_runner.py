@@ -50,7 +50,7 @@ def run_experiment(args, config, device):
     # Create a unique tag for the experiment
     unique_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
 
-    _ = train(
+    train(
         model=model,
         model_version=args.model_version,
         model_type=unique_tag,

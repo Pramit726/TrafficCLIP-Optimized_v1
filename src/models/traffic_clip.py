@@ -85,7 +85,7 @@ class TrafficCLIP(nn.Module):
 
         # f2: Semantics-aware features
         with torch.no_grad():
-            f2_raw = self.semantics_backbone(images).squeeze()
+            f2_raw = self.semantics_backbone(images).flatten(1)
         f2 = self.semantics_proj(f2_raw)
 
         # Apply Traffic Adapter with residual connection

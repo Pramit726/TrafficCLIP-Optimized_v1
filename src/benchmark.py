@@ -9,7 +9,7 @@ from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_sc
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
 from src.dataset import get_dataloader
-from src.utils.utils import load_config, plot_confusion_matrix, set_seed
+from src.utils.utils import load_config, plot_confusion_matrix, save_metrics, set_seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
@@ -107,14 +107,16 @@ def test_and_evaluate(
     logging.info(f"Avg Macro F1 Score: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
 
     # save run metrics to pandas dataframe
-    results_path = Path(__file__).parent.parent / "results" / "metrics" / model_version
-    results_path.mkdir(parents=True, exist_ok=True)
-    results_file = results_path / f"{model_type}_test_results.csv"
-    df = pd.DataFrame(
-        run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
-    )
-    df.to_csv(results_file, index_label="Run")
-    logging.info(f"Saved detailed run metrics to {results_file}")
+    # results_path = Path(__file__).parent.parent / "results" / "metrics" / model_version
+    # results_path.mkdir(parents=True, exist_ok=True)
+    # results_file = results_path / f"{model_type}_test_results.csv"
+    # df = pd.DataFrame(
+    #     run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
+    # )
+    # df.to_csv(results_file, index_label="Run")
+    # logging.info(f"Saved detailed run metrics to {results_file}")
+    run_metrics_array = np.array(run_metrics)
+    save_metrics(run_metrics_array, model_type, model_version)
 
     plot_confusion_matrix(
         all_labels,

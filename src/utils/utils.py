@@ -189,5 +189,33 @@ def set_seed(seed=42):
     torch.backends.cudnn.benchmark = False
 
 
+def save_metrics(run_metrics, model_type, model_version):
+    """
+    Saves multi-seed metrics to a CSV file in an isolated directory.
+
+    Args:
+        run_metrics (list): List of [Acc, Prec, Rec, F1] from each seed run.
+        model_type (str): Unique tag for the specific run (e.g., 'optimized_L2.0_statsTrue').
+        model_version (str): Higher-level model category ('original' or 'optimized').
+    """
+    # Construct the path: results/metrics/optimized/
+    results_path = (
+        Path(__file__).parent.parent.parent / "results" / "metrics" / model_version
+    )
+    results_path.mkdir(parents=True, exist_ok=True)
+
+    # 2. Define the filename based on the unique experiment tag
+    results_file = results_path / f"{model_type}_results.csv"
+
+    # 3. Convert metrics to a DataFrame and save
+    df = pd.DataFrame(
+        run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
+    )
+    df.to_csv(results_file, index_label="Run")
+
+    logging.info(f"Saved detailed run metrics to {results_file}")
+    return results_file
+
+
 if __name__ == "__main__":
     load_config()

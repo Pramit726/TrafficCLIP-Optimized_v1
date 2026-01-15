@@ -12,7 +12,7 @@ from loss import contrastive_loss_func
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
 from src.dataset import get_dataloader
-from src.utils.utils import load_config, plot_convergence, set_seed
+from src.utils.utils import load_config, plot_convergence, save_metrics, set_seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
@@ -99,6 +99,7 @@ def train(
     )
     model_path.mkdir(parents=True, exist_ok=True)
 
+    run_metrics = []
     for epoch in range(epochs):
         # Training Phase
         model.train()
@@ -136,8 +137,8 @@ def train(
 
         val_loss = val_metrics["loss"]
         val_acc = val_metrics["accuracy"]
-        # val_pre = val_metrics["precision"]
-        # val_re = val_metrics["recall"]
+        val_pre = val_metrics["precision"]
+        val_re = val_metrics["recall"]
         val_f1 = val_metrics["f1_macro"]
 
         history["train_loss"].append(total_train_loss / len(train_loader))
@@ -164,8 +165,9 @@ def train(
             torch.save(model.state_dict(), model_path / "best_model.pt")
             logging.info(f"Best model saved with F1: {val_f1:.4f}")
 
+    run_metrics.append([val_acc, val_pre, val_re, val_f1])
+    save_metrics(run_metrics, model_type, model_version)
     plot_convergence(history, model_type, save_path=model_path)
-    return best_f1
 
 
 if __name__ == "__main__":
