@@ -11,6 +11,8 @@ from src.dataset import get_dataloader
 from src.train import train
 from src.utils.utils import load_config, set_seed
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
 
 def run_experiment(args, config, device):
     """
@@ -42,6 +44,8 @@ def run_experiment(args, config, device):
     early_stopping = EarlyStopping(
         patience=p_cfg["patience"], delta=p_cfg["delta"], mode="max"
     )
+
+    logging, inf
 
     logging.info(
         f"Running: {args.model_version} | Lambda: {args.lambda_cl} | Stats: {args.use_stats_prompts}"

@@ -2,6 +2,8 @@ import logging
 
 import torch
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
 
 class EarlyStopping:
     def __init__(self, patience=5, delta=0, verbose=False, mode="min"):

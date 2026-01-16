@@ -9,6 +9,8 @@ from src.models.opt_traffic_clip import OptimizedTrafficCLIP
 from src.models.traffic_clip import TrafficCLIP
 from src.utils.utils import load_config
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
 
 def run_gradcam_diagnostic(args, config, target_conflicts):
     config = load_config()
