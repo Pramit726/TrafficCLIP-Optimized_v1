@@ -58,7 +58,7 @@ def debug_misclassifications(
     Specifically targets Gmail/BitTorrent and Gmail/Skype conflicts.
     """
 
-    NPZ_PATH = config["paths"]["mini_output_data_file"]
+    NPZ_PATH = config["paths"]["output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
