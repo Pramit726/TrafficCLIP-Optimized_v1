@@ -81,11 +81,11 @@ def train(
     Standardized Training Loop:
     Implements joint optimization using Cross-Entropy and Contrastive Loss.
     """
-    optimizer = optim.SGD(model.parameters(), lr=0.002, momentum=0.9)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200)
-    criterion_ce = nn.CrossEntropyLoss()
 
     epochs = config["train"][model_version]["epochs"]
+    optimizer = optim.SGD(model.parameters(), lr=0.002, momentum=0.9)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    criterion_ce = nn.CrossEntropyLoss()
 
     # History dictionary for convergence plot
     history = {"train_loss": [], "val_loss": [], "val_f1": []}

@@ -82,11 +82,9 @@ if __name__ == "__main__":
         model = OptimizedTrafficCLIP(num_classes=num_classes)
         total_params = sum(p.numel() for p in model.parameters())
         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        logging.info(f"Total Parameters in TrafficCLIP Optimized: {total_params}")
         logging.info(
-            f"Total Parameters in TrafficCLIP Optimized: {total_params/1e6:.2f} Million"
-        )
-        logging.info(
-            f"Trainable Parameters in TrafficCLIP Optimized: {trainable_params/1e6:.2f} Million"
+            f"Trainable Parameters in TrafficCLIP Optimized: {trainable_params}"
         )
         logging.info(f"Trainable Ratio: {trainable_params/total_params:.2f}")
 

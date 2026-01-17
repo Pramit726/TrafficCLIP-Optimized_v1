@@ -37,7 +37,7 @@ preprocess:
   max_length: 64
   
 train:
-  seed : 63
+  seed : 42
   original:
     batch_size: 64
     epochs: 100
