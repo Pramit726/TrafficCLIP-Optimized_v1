@@ -45,7 +45,9 @@ def run_experiment(args, config, device):
         patience=p_cfg["patience"], delta=p_cfg["delta"], mode="max"
     )
 
-    logging, inf
+    logging.info(
+        f"Early Stopping Config: Patience={p_cfg['patience']}, Delta={p_cfg['delta']}"
+    )
 
     logging.info(
         f"Running: {args.model_version} | Lambda: {args.lambda_cl} | Stats: {args.use_stats_prompts}"

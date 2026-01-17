@@ -2,10 +2,35 @@
 
 echo "STARTING ABLATION TRAIN SWEEP"
 
-# Sweep through five Lambda values for Optimized Model with Original Prompts
+# Initialize counter
+count=1
+
+# Sweep through Lambda values
 for l in 0.0 0.5 1.0 2.0
 do
-   python src/train_runner.py --model_version optimized --lambda_cl $l
+    echo "------------------------------------------------"
+    echo "Training with Lambda: $l (Run #$count)"
+    echo "------------------------------------------------"
+
+    # Run Training
+    python src/train_runner.py --model_version optimized --lambda_cl $l
+
+    # Define Filenames with auto-increment
+    EXP_ZIP="experiments_run${count}_lambda${l}.zip"
+    RES_ZIP="results_run${count}_lambda${l}.zip"
+
+    # Zip the outputs from the exact source folders
+    echo "Zipping results for run #$count..."
+    zip -r "$EXP_ZIP" /content/TrafficCLIP-Optimized/experiments
+    zip -r "$RES_ZIP" /content/TrafficCLIP-Optimized/results
+
+    # Move the newly created zips to Google Drive
+    echo "Moving to Google Drive..."
+    mv "$EXP_ZIP" /content/drive/MyDrive/
+    mv "$RES_ZIP" /content/drive/MyDrive/
+
+    # Increment counter for next run
+    count=$((count + 1))
 done
 
 echo "ABLATION TRAIN SWEEP COMPLETE"
