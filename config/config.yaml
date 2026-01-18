@@ -41,16 +41,16 @@ train:
   original:
     batch_size: 64
     epochs: 100
-    lambda_cl : 1.0
+    # lambda_cl : 1.0
   optimized:
     batch_size: 64
     epochs: 100
-    lambda_cl : 2.0
+    # lambda_cl : 2.0
   
 early_stopping:
   original:
-    patience: 20
-    delta: 0.001
+    patience: 10
+    delta: 0.01
   optimized:
     patience: 10
     delta: 0.01
