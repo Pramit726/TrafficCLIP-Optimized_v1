@@ -35,9 +35,10 @@ def validate(model, val_loader, device, lambda_cl):
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
+            stats = batch["stats"].to(device)
 
             # Forward Pass
-            logits, current_scale = model(images, input_ids, attention_mask)
+            logits, current_scale = model(images, input_ids, attention_mask, stats)
 
             # Joint Loss Calculation (CE + CL)
             loss_ce = criterion_ce(logits, labels)
@@ -115,9 +116,13 @@ def train(
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
+            # Extract Physics Modality (IAT, Jitter, Entropy)
+            stats_vector = batch["stats"].to(device)
 
             optimizer.zero_grad()
-            logits, current_scale = model(images, input_ids, attention_mask)
+            logits, current_scale = model(
+                images, input_ids, attention_mask, stats_vector
+            )
 
             # Joint optimization: CE + CL
             loss_ce = criterion_ce(logits, labels)

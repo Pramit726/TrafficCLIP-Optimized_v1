@@ -69,10 +69,14 @@ class TrafficDataset(Dataset):
             return_tensors="pt",
         )
 
+        # Create the 3-dim stats_vector
+        stats_vector = torch.tensor([m_iat, m_jitter, m_entropy], dtype=torch.float32)
+
         return {
             "image": image,  # Input for Vision Encoder
             "input_ids": tokens["input_ids"].squeeze(0),  # Input for BERT Encoder
             "attention_mask": tokens["attention_mask"].squeeze(0),
+            "stats": stats_vector,  # Added stats key
             "label": label,
             "raw_text": text_description,  # debugging
         }

@@ -40,7 +40,14 @@ def run_test_experiment(args):
     num_classes = sum(len(c) for c in traffic_cfg.values())
 
     if args.model_version == "optimized":
-        model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
+        if args.use_stats:
+            model = OptimizedTrafficCLIP(
+                num_classes=num_classes,
+                use_stats=args.use_stats,
+                stats_input_dim=args.stats_input_dim,
+            ).to(device)
+        else:
+            model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
     else:
         model = TrafficCLIP().to(device)
 
@@ -70,6 +77,12 @@ if __name__ == "__main__":
         type=str,
         choices=["original", "optimized"],
         default="optimized",
+    )
+    parser.add_argument(
+        "--use_stats", action="store_true", help="Toggle use of statistical features"
+    )
+    parser.add_argument(
+        "--stats_input_dim", type=int, default=3, help="Number of statistical features"
     )
     parser.add_argument("--seed", type=int, default=42)
 

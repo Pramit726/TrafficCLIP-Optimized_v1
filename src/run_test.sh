@@ -19,4 +19,14 @@ do
    python src/test_runner.py --model_version optimized --lambda_cl $l --num_runs 3
 done
 
+for l in $LAMBDAS
+do
+   echo "Evaluating Original Prompts | Lambda: $l with statsistical features"
+   python src/test_runner.py --model_version optimized --use_stats --stats_input_dim 3 --lambda_cl $l --num_runs 3
+done
+
+echo "Evaluating Original Model with Original Prompts | 1.0 Lambda"
+python src/test_runner.py --model_version original --lambda_cl 1.0 --num_runs 3
+echo "Evaluating Original Model with Statistical Prompts | 1.0 Lambda"
+python src/test_runner.py --model_version original --use_stats_prompts --lambda_cl 1.0 --num_runs 3
 echo "ABLATION TEST SWEEP COMPLETE"

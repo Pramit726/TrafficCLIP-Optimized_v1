@@ -27,6 +27,10 @@ class TrafficGradCAM:
 
     def generate_heatmap(self, input_image, input_ids, attention_mask, target_class):
         self.model.eval()
+
+        # FIX: Enable gradients for the input image to allow backprop to the Conv layer
+        input_image.requires_grad = True
+
         # Forward pass through the Optimized architecture
         logits, _ = self.model(input_image, input_ids, attention_mask)
 
@@ -74,7 +78,7 @@ def debug_misclassifications(
         use_dynamic_prompts=use_dynamic_prompts,
     )
     # Target the first Conv layer of the Detail Encoder for raw byte patterns
-    cam = TrafficGradCAM(model, model.detail_encoder[0])
+    cam = TrafficGradCAM(model, model.detail_encoder.initial_conv[0])
 
     model.eval()
     save_path = Path(experiment_dir)

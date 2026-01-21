@@ -21,7 +21,7 @@ def run_experiment(args, config, device):
     # Set global seed for reproducibility
     set_seed(args.seed)
     train_loader, val_loader, _ = get_dataloader(
-        npz_path=config["paths"]["output_data_file"],
+        npz_path=config["paths"]["mini_output_data_file"],
         tokenizer=config["preprocess"]["tokenizer"],
         batch_size=config["preprocess"]["batch_size"],
         max_length=config["preprocess"]["max_length"],
@@ -34,7 +34,16 @@ def run_experiment(args, config, device):
     num_classes = sum(len(cl) for cl in traffic_cfg.values())
 
     if args.model_version == "optimized":
-        model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
+        # use stats flag to toggle statistical features
+        if args.use_stats:
+            model = OptimizedTrafficCLIP(
+                num_classes=num_classes,
+                use_stats=args.use_stats,
+                stats_dim=args.stats_input_dim,
+            ).to(device)
+            p_cfg = config["early_stopping"]["optimized"]
+        else:
+            model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
         p_cfg = config["early_stopping"]["optimized"]
     else:
         model = TrafficCLIP().to(device)
@@ -86,6 +95,12 @@ if __name__ == "__main__":
         default="optimized",
     )
     parser.add_argument("--seed", type=int, default=62)
+    parser.add_argument(
+        "--use_stats", action="store_true", help="Toggle use of statistical features"
+    )
+    parser.add_argument(
+        "--stats_input_dim", type=int, default=3, help="Number of statistical features"
+    )
     args = parser.parse_args()
 
     config = load_config()

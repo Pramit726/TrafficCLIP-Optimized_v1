@@ -57,6 +57,6 @@ early_stopping:
   
 
 test:
-  seed: 47
+  seed: 42
   max_length: 64
   batch_size: 64

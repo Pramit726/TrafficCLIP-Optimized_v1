@@ -68,9 +68,10 @@ def test_and_evaluate(
                 input_ids = batch["input_ids"].to(device)
                 attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
+                stats = batch["stats"].to(device)
 
                 # Unpack tuple: (logits, logit_scale)
-                logits, _ = model(images, input_ids, attention_mask)
+                logits, _ = model(images, input_ids, attention_mask, stats)
                 preds = torch.argmax(logits, dim=1)
 
                 preds_list.extend(preds.cpu().numpy())
