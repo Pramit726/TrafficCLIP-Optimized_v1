@@ -59,11 +59,11 @@ def run_experiment(args, config, device):
     )
 
     logging.info(
-        f"Running: {args.model_version} | Lambda: {args.lambda_cl} | Stats: {args.use_stats_prompts}"
+        f"Running: {args.model_version} | Lambda: {args.lambda_cl} | Stats Prompts: {args.use_stats_prompts} | Stats Data: {args.use_stats}"
     )
 
     # Create a unique tag for the experiment
-    unique_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+    unique_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
 
     train(
         model=model,

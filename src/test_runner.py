@@ -17,7 +17,7 @@ def run_test_experiment(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths based on the Training structure
-    exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+    exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
     # if args.use_stats_prompts:
     #     exp_tag += "_statsTrue"
     # else:

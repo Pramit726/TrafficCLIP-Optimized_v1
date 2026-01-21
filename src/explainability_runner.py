@@ -17,7 +17,7 @@ def run_gradcam_diagnostic(args, config, target_conflicts):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths based on the Training structure
-    exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+    exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
 
     model_path = (
         Path(__file__).parent.parent
@@ -42,7 +42,7 @@ def run_gradcam_diagnostic(args, config, target_conflicts):
             model = OptimizedTrafficCLIP(
                 num_classes=num_classes,
                 use_stats=args.use_stats,
-                stats_dim=args.stats_input_dim,
+                stats_input_dim=args.stats_input_dim,
             ).to(device)
         else:
             model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
