@@ -17,7 +17,7 @@ from src.utils.utils import load_config, plot_convergence, save_metrics, set_see
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(model, val_loader, device, lambda_cl):
+def validate(model, model_version, val_loader, device, lambda_cl):
     """
     Standardized Validation Function:
     Calculates performance metrics using joint loss (CE + CL).
@@ -38,7 +38,12 @@ def validate(model, val_loader, device, lambda_cl):
             stats = batch["stats"].to(device)
 
             # Forward Pass
-            logits, current_scale = model(images, input_ids, attention_mask, stats)
+            if model_version == "original":
+                logits, current_scale = model(images, input_ids, attention_mask)
+            else:
+                logits, current_scale = model(images, input_ids, attention_mask, stats)
+
+            # logits, current_scale = model(images, input_ids, attention_mask, stats)
 
             # Joint Loss Calculation (CE + CL)
             loss_ce = criterion_ce(logits, labels)
@@ -120,9 +125,12 @@ def train(
             stats_vector = batch["stats"].to(device)
 
             optimizer.zero_grad()
-            logits, current_scale = model(
-                images, input_ids, attention_mask, stats_vector
-            )
+            if model_version == "original":
+                logits, current_scale = model(images, input_ids, attention_mask)
+            else:
+                logits, current_scale = model(
+                    images, input_ids, attention_mask, stats_vector
+                )
 
             # Joint optimization: CE + CL
             loss_ce = criterion_ce(logits, labels)
@@ -138,7 +146,7 @@ def train(
             scheduler.step()
 
         # Validation Phase
-        val_metrics = validate(model, val_loader, device, lambda_cl)
+        val_metrics = validate(model, model_version, val_loader, device, lambda_cl)
 
         val_loss = val_metrics["loss"]
         val_acc = val_metrics["accuracy"]

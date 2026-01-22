@@ -85,6 +85,10 @@ class OptimizedTrafficCLIP(TrafficCLIP):
             self.stats_proj = None
             fusion_input_dim = vision_dim + text_dim  # 2048
 
+        self.fusion_head = NonLinearFusionHead(
+            num_classes=num_classes, input_dim=fusion_input_dim
+        )
+
     def forward(self, images, input_ids, attention_mask, stats_vector=None):
         """
         Modified forward pass:

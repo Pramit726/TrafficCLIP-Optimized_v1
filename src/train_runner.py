@@ -38,13 +38,15 @@ def run_experiment(args, config, device):
         if args.use_stats:
             model = OptimizedTrafficCLIP(
                 num_classes=num_classes,
-                use_stats=args.use_stats,
-                stats_dim=args.stats_input_dim,
+                use_stats=True,
+                stats_input_dim=args.stats_input_dim,
             ).to(device)
             p_cfg = config["early_stopping"]["optimized"]
         else:
-            model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
-        p_cfg = config["early_stopping"]["optimized"]
+            model = OptimizedTrafficCLIP(num_classes=num_classes, use_stats=False).to(
+                device
+            )
+            p_cfg = config["early_stopping"]["optimized"]
     else:
         model = TrafficCLIP().to(device)
         p_cfg = config["early_stopping"]["original"]
@@ -63,7 +65,12 @@ def run_experiment(args, config, device):
     )
 
     # Create a unique tag for the experiment
-    unique_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+    if args.use_stats:
+        unique_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+    else:
+        unique_tag = (
+            f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+        )
 
     train(
         model=model,

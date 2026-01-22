@@ -19,6 +19,7 @@ do
    python src/test_runner.py --model_version optimized --lambda_cl $l --num_runs 3
 done
 
+# Test Optimized Model with Original Prompts and Statistical Features (Phase 2 & 3)
 for l in $LAMBDAS
 do
    echo "Evaluating Original Prompts | Lambda: $l with statsistical features"

@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from transformers import AutoTokenizer
 
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
@@ -12,6 +13,23 @@ from src.dataset import get_dataloader
 from src.utils.utils import load_config, plot_confusion_matrix, save_metrics, set_seed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+
+
+def get_original_descriptor_bank(model, tokenizer, class_names, device):
+    """
+    Creates a static bank of class embeddings for the Original Prompt variant.
+    """
+    prompts = [f"A network traffic gray photo of class {name}" for name in class_names]
+    encoded = tokenizer(prompts, padding=True, truncation=True, return_tensors="pt").to(
+        device
+    )
+
+    with torch.no_grad():
+        # Shape: [K_classes, 1024]
+        text_features = model.get_text_features(
+            encoded["input_ids"], encoded["attention_mask"]
+        )
+    return text_features
 
 
 def test_and_evaluate(
@@ -25,7 +43,7 @@ def test_and_evaluate(
     seed=42,
 ):
     """
-    Standardized Testing for M.Tech Thesis:
+    Standardized Testing:
     1. Regenerates a stratified test_loader for each pass using different seeds.
     2. Averages AC, PR, RC, and Macro F1 across all runs.
     3. Identifies the highest F1 run for the Confusion Matrix.
@@ -47,6 +65,7 @@ def test_and_evaluate(
         # Generate a unique seed for this specific run
         current_seed = seed + run
         set_seed(current_seed)
+        tokenizer = AutoTokenizer.from_pretrained(config["preprocess"]["tokenizer"])
 
         # Recreate dataloader with the new seed to get a different stratified test split
         _, _, test_loader = get_dataloader(
@@ -59,8 +78,16 @@ def test_and_evaluate(
             use_dynamic_prompts=use_dynamic_prompts,
         )
 
+        class_names = test_loader.dataset.dataset.class_names
+
         preds_list = []
         labels_list = []
+
+        # PRE-ENCODE static bank for Original variant
+        if not use_dynamic_prompts:
+            static_descriptor_bank = get_original_descriptor_bank(
+                model, tokenizer, class_names, device
+            )
 
         with torch.no_grad():
             for batch in test_loader:
@@ -70,9 +97,49 @@ def test_and_evaluate(
                 labels = batch["label"].to(device)
                 stats = batch["stats"].to(device)
 
-                # Unpack tuple: (logits, logit_scale)
-                logits, _ = model(images, input_ids, attention_mask, stats)
-                preds = torch.argmax(logits, dim=1)
+                # Variant 1: Original Prompts (Global Static Matching)
+                if not use_dynamic_prompts:
+                    # Vision features normalized for similarity
+                    v_e = model.get_vision_features(images)
+                    # Match against all K classes in the static bank
+                    logits = (
+                        torch.matmul(v_e, static_descriptor_bank.T)
+                        * model.logit_scale.exp()
+                    )
+                    preds = torch.argmax(logits, dim=1)
+
+                # Variant 2: Statistical Prompts (Global Dynamic Matching)
+                else:
+                    batch_preds = []
+                    v_e = model.get_vision_features(images)
+
+                    # Must iterate because descriptions depend on specific sample statistics
+                    for i in range(len(images)):
+                        m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
+
+                        # Generate K descriptions for THIS specific image's behavior
+                        sample_prompts = [
+                            f"A network traffic gray photo of class {name} with "
+                            f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+                            f"and {m_entropy:.2f} byte entropy."
+                            for name in class_names
+                        ]
+
+                        encoded = tokenizer(
+                            sample_prompts, padding=True, return_tensors="pt"
+                        ).to(device)
+                        all_class_features = model.get_text_features(
+                            encoded["input_ids"], encoded["attention_mask"]
+                        )
+
+                        # Match current image against its dynamic class bank
+                        logits = (
+                            torch.matmul(v_e[i : i + 1], all_class_features.T)
+                            * model.logit_scale.exp()
+                        )
+                        batch_preds.append(torch.argmax(logits, dim=1).item())
+
+                    preds = torch.tensor(batch_preds).to(device)
 
                 preds_list.extend(preds.cpu().numpy())
                 labels_list.extend(labels.cpu().numpy())
@@ -91,7 +158,7 @@ def test_and_evaluate(
             best_f1 = f1
             best_preds = preds_list
             all_labels = labels_list
-            class_names = test_loader.dataset.dataset.class_names
+            # class_names = test_loader.dataset.dataset.class_names
 
         logging.info(
             f"Pass {run+1} (Seed {current_seed}): Accuracy={acc:.4f}, Macro F1={f1:.4f}"

@@ -95,8 +95,16 @@ def debug_misclassifications(
         ids = batch["input_ids"].to(device)
         mask = batch["attention_mask"].to(device)
         labels = batch["label"].to(device)
+        stats = batch["stats"].to(device)
 
-        logits, _ = model(images, ids, mask)
+        if args.model_version == "optimized":
+            if args.use_stats:
+                logits, _ = model(images, ids, mask, stats)
+            else:
+                logits, _ = model(images, ids, mask)
+        else:
+            logits, _ = model(images, ids, mask)
+
         preds = torch.argmax(logits, dim=1)
 
         for i in range(len(labels)):

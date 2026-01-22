@@ -17,7 +17,12 @@ def run_test_experiment(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Paths based on the Training structure
-    exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+    if args.use_stats:
+        exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+    else:
+        exp_tag = (
+            f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+        )
     # if args.use_stats_prompts:
     #     exp_tag += "_statsTrue"
     # else:
@@ -43,11 +48,13 @@ def run_test_experiment(args):
         if args.use_stats:
             model = OptimizedTrafficCLIP(
                 num_classes=num_classes,
-                use_stats=args.use_stats,
+                use_stats=True,
                 stats_input_dim=args.stats_input_dim,
             ).to(device)
         else:
-            model = OptimizedTrafficCLIP(num_classes=num_classes).to(device)
+            model = OptimizedTrafficCLIP(num_classes=num_classes, use_stats=False).to(
+                device
+            )
     else:
         model = TrafficCLIP().to(device)
 
