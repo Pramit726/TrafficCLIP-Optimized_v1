@@ -21,7 +21,7 @@ def run_experiment(args, config, device):
     # Set global seed for reproducibility
     set_seed(args.seed)
     train_loader, val_loader, _ = get_dataloader(
-        npz_path=config["paths"]["mini_output_data_file"],
+        npz_path=config["paths"]["output_data_file"],
         tokenizer=config["preprocess"]["tokenizer"],
         batch_size=config["preprocess"]["batch_size"],
         max_length=config["preprocess"]["max_length"],
