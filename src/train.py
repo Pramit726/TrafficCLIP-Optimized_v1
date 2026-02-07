@@ -390,7 +390,7 @@ def train(
             val_metrics = validate(
                 model,
                 model_version,
-                device,
+                device=device,
                 args=args,
                 val_loader=val_loader,
                 config=config,
