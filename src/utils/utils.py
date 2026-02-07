@@ -217,5 +217,26 @@ def save_metrics(run_metrics, model_type, model_version):
     return results_file
 
 
+def get_original_descriptor_bank(model, tokenizer, class_names, max_length, device):
+    """
+    Creates a static bank of class embeddings for the Original Prompt variant.
+    """
+    prompts = [f"A network traffic gray photo of class {name}" for name in class_names]
+    encoded = tokenizer(
+        prompts,
+        padding="max_length",
+        truncation=True,
+        return_tensors="pt",
+        max_length=max_length,
+    ).to(device)
+
+    with torch.no_grad():
+        # Shape: [K_classes, 1024]
+        text_features = model.get_text_features(
+            encoded["input_ids"], encoded["attention_mask"]
+        )
+    return text_features
+
+
 if __name__ == "__main__":
     load_config()

@@ -26,3 +26,5 @@ git remote add origin https://github.com/Pramit726/TrafficCLIP-Optimized
 git push -u origin main
 
 References:
+
+bash src/run_train_b1.sh

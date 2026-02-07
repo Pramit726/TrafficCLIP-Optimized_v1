@@ -10,26 +10,15 @@ from transformers import AutoTokenizer
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
 from src.dataset import get_dataloader
-from src.utils.utils import load_config, plot_confusion_matrix, save_metrics, set_seed
+from src.utils.utils import (
+    get_original_descriptor_bank,
+    load_config,
+    plot_confusion_matrix,
+    save_metrics,
+    set_seed,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
-
-
-def get_original_descriptor_bank(model, tokenizer, class_names, device):
-    """
-    Creates a static bank of class embeddings for the Original Prompt variant.
-    """
-    prompts = [f"A network traffic gray photo of class {name}" for name in class_names]
-    encoded = tokenizer(prompts, padding=True, truncation=True, return_tensors="pt").to(
-        device
-    )
-
-    with torch.no_grad():
-        # Shape: [K_classes, 1024]
-        text_features = model.get_text_features(
-            encoded["input_ids"], encoded["attention_mask"]
-        )
-    return text_features
 
 
 def test_and_evaluate(
@@ -65,7 +54,7 @@ def test_and_evaluate(
         # Generate a unique seed for this specific run
         current_seed = seed + run
         set_seed(current_seed)
-        tokenizer = AutoTokenizer.from_pretrained(config["preprocess"]["tokenizer"])
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
         # Recreate dataloader with the new seed to get a different stratified test split
         _, _, test_loader = get_dataloader(
@@ -86,7 +75,7 @@ def test_and_evaluate(
         # PRE-ENCODE static bank for Original variant
         if not use_dynamic_prompts:
             static_descriptor_bank = get_original_descriptor_bank(
-                model, tokenizer, class_names, device
+                model, tokenizer, class_names, MAX_LENGTH, device
             )
 
         with torch.no_grad():
@@ -110,34 +99,62 @@ def test_and_evaluate(
 
                 # Variant 2: Statistical Prompts (Global Dynamic Matching)
                 else:
-                    batch_preds = []
+
                     v_e = model.get_vision_features(images)
+                    s_e = None
+                    if model.use_stats:
+                        s_e = model.stats_proj(stats)  # [Batch, 512]
+                        s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
+
+                    batch_preds = []
 
                     # Must iterate because descriptions depend on specific sample statistics
                     for i in range(len(images)):
-                        m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
+                        if not use_dynamic_prompts:
+                            # Use the pre-encoded bank you made at the start of the 'run'
+                            t_e_all = static_descriptor_bank  # [K, 1024]
+                        else:
+                            m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
 
-                        # Generate K descriptions for THIS specific image's behavior
-                        sample_prompts = [
-                            f"A network traffic gray photo of class {name} with "
-                            f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
-                            f"and {m_entropy:.2f} byte entropy."
-                            for name in class_names
-                        ]
+                            # Generate K descriptions for THIS specific image's behavior
+                            sample_prompts = [
+                                f"A network traffic gray photo of class {name} with "
+                                f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+                                f"and {m_entropy:.2f} byte entropy."
+                                for name in class_names
+                            ]
 
-                        encoded = tokenizer(
-                            sample_prompts, padding=True, return_tensors="pt"
-                        ).to(device)
-                        all_class_features = model.get_text_features(
+                            encoded = tokenizer(
+                                sample_prompts,
+                                padding="max_length",
+                                truncation=True,
+                                return_tensors="pt",
+                                max_length=MAX_LENGTH,
+                            ).to(device)
+                        t_e_all = model.get_text_features(
                             encoded["input_ids"], encoded["attention_mask"]
-                        )
+                        )  # [K, 1024]
 
-                        # Match current image against its dynamic class bank
-                        logits = (
-                            torch.matmul(v_e[i : i + 1], all_class_features.T)
-                            * model.logit_scale.exp()
-                        )
-                        batch_preds.append(torch.argmax(logits, dim=1).item())
+                        # Expand current image and stats to match K class hypotheses
+                        num_classes = len(class_names)
+                        v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
+
+                        if s_e is not None:
+                            s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)  # [K, 512]
+                            combined = torch.cat(
+                                (v_e_hyp, t_e_all, s_e_hyp), dim=1
+                            )  # [K, 2560]
+                        else:
+                            combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
+
+                        # Pass all K hypotheses through the MLP at once
+                        logits = model.fusion_head(
+                            combined
+                        )  # [K_hypotheses, K_classes]
+
+                        confidences = torch.diag(logits)
+                        # The predicted class is the one with the highest confidence (diagonal element)
+                        batch_preds.append(torch.argmax(confidences).item())
 
                     preds = torch.tensor(batch_preds).to(device)
 

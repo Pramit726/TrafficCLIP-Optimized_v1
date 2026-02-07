@@ -6,7 +6,7 @@ echo "STARTING ABLATION TRAIN SWEEP"
 count=1
 
 # Sweep through Lambda values
-for l in 0.0 0.5 1.0 2.0
+for l in 0.0 0.5 1.0 2.0 5.0
 do
     echo "------------------------------------------------"
     echo "Training with Lambda: $l (Run #$count)"

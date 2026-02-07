@@ -6,28 +6,63 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from transformers import AutoTokenizer
 
 from early_stopping import EarlyStopping
 from loss import contrastive_loss_func
 from models.opt_traffic_clip import OptimizedTrafficCLIP
 from models.traffic_clip import TrafficCLIP
 from src.dataset import get_dataloader
-from src.utils.utils import load_config, plot_convergence, save_metrics, set_seed
+from src.utils.utils import (
+    get_original_descriptor_bank,
+    load_config,
+    plot_convergence,
+    save_metrics,
+    set_seed,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(model, model_version, val_loader, device, lambda_cl):
+def validate(
+    model,
+    device,
+    config,
+    use_dynamic_prompts,
+):
     """
     Standardized Validation Function:
     Calculates performance metrics using joint loss (CE + CL).
     """
     model.eval()
-    all_preds = []
-    all_labels = []
+    all_preds = []  # Total predictions across all batches
+    all_labels = []  # Total true labels across all batches
     total_val_loss = 0.0
 
     criterion_ce = torch.nn.CrossEntropyLoss()
+
+    # Load configuration
+    NPZ_PATH = config["paths"]["output_data_file"]
+    TOKENIZER_NAME = config["preprocess"]["tokenizer"]
+    MAX_LENGTH = config["test"]["max_length"]
+    BATCH_SIZE = config["test"]["batch_size"]
+
+    val_loader = get_dataloader(
+        npz_path=NPZ_PATH,
+        tokenizer=TOKENIZER_NAME,
+        batch_size=BATCH_SIZE,
+        max_length=MAX_LENGTH,
+        use_dynamic_prompts=use_dynamic_prompts,
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+    class_names = val_loader.dataset.dataset.class_names
+
+    # PRE-ENCODE static bank for Original variant
+    if not use_dynamic_prompts:
+        static_descriptor_bank = get_original_descriptor_bank(
+            model, tokenizer, class_names, MAX_LENGTH, device
+        )
 
     with torch.no_grad():
         for batch in val_loader:
@@ -37,25 +72,78 @@ def validate(model, model_version, val_loader, device, lambda_cl):
             labels = batch["label"].to(device)
             stats = batch["stats"].to(device)
 
-            # Forward Pass
-            if model_version == "original":
-                logits, current_scale = model(images, input_ids, attention_mask)
+            # List for this specific batch's predictions
+            current_batch_preds = []
+
+            # Variant 1: Original Prompts (Global Static Matching)
+            if not use_dynamic_prompts:
+                # Vision features normalized for similarity
+                v_e = model.get_vision_features(images)
+                # Match against all K classes in the static bank
+                logits = (
+                    torch.matmul(v_e, static_descriptor_bank.T)
+                    * model.logit_scale.exp()
+                )
+                preds = torch.argmax(logits, dim=1)
+
+            # Variant 2: Statistical Prompts (Global Dynamic Matching)
             else:
-                logits, current_scale = model(images, input_ids, attention_mask, stats)
 
-            # logits, current_scale = model(images, input_ids, attention_mask, stats)
+                v_e = model.get_vision_features(images)
+                s_e = None
+                if model.use_stats:
+                    s_e = model.stats_proj(stats)  # [Batch, 512]
+                    s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
 
-            # Joint Loss Calculation (CE + CL)
-            loss_ce = criterion_ce(logits, labels)
-            v_f = model.get_vision_features(images)
-            loss_cl = contrastive_loss_func(v_f, labels, current_scale)
+                all_preds = []
 
-            loss = loss_ce + (lambda_cl * loss_cl)
-            total_val_loss += loss.item()
+                # Must iterate because descriptions depend on specific sample statistics
+                for i in range(len(images)):
+                    if not use_dynamic_prompts:
+                        # Use the pre-encoded bank you made at the start of the 'run'
+                        t_e_all = static_descriptor_bank  # [K, 1024]
+                    else:
+                        m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
 
-            # Predictions and Labels
-            preds = torch.argmax(logits, dim=1)
-            all_preds.extend(preds.cpu().numpy())
+                        # Generate K descriptions for THIS specific image's behavior
+                        sample_prompts = [
+                            f"A network traffic gray photo of class {name} with "
+                            f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+                            f"and {m_entropy:.2f} byte entropy."
+                            for name in class_names
+                        ]
+
+                        encoded = tokenizer(
+                            sample_prompts,
+                            padding="max_length",
+                            truncation=True,
+                            return_tensors="pt",
+                            max_length=MAX_LENGTH,
+                        ).to(device)
+                    t_e_all = model.get_text_features(
+                        encoded["input_ids"], encoded["attention_mask"]
+                    )  # [K, 1024]
+
+                    # Expand current image and stats to match K class hypotheses
+                    num_classes = len(class_names)
+                    v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
+
+                    if s_e is not None:
+                        s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)  # [K, 512]
+                        combined = torch.cat(
+                            (v_e_hyp, t_e_all, s_e_hyp), dim=1
+                        )  # [K, 2560]
+                    else:
+                        combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
+
+                    # Pass all K hypotheses through the MLP at once
+                    logits = model.fusion_head(combined)  # [K_hypotheses, K_classes]
+
+                    confidences = torch.diag(logits)
+                    # The predicted class is the one with the highest confidence (diagonal element)
+                    current_batch_preds.append(torch.argmax(confidences).item())
+
+            all_preds.extend(current_batch_preds)
             all_labels.extend(labels.cpu().numpy())
 
     # Standardized Performance Metrics
@@ -72,6 +160,117 @@ def validate(model, model_version, val_loader, device, lambda_cl):
     return metrics
 
 
+# def train(
+#     model,
+#     model_version,
+#     model_type,
+#     train_loader,
+#     val_loader,
+#     config,
+#     device,
+#     lambda_cl,
+#     early_stopping=None,
+# ):
+#     """
+#     Standardized Training Loop:
+#     Implements joint optimization using Cross-Entropy and Contrastive Loss.
+#     """
+
+#     epochs = config["train"][model_version]["epochs"]
+#     optimizer = optim.SGD(model.parameters(), lr=0.002, momentum=0.9)
+#     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+#     criterion_ce = nn.CrossEntropyLoss()
+
+#     # History dictionary for convergence plot
+#     history = {"train_loss": [], "val_loss": [], "val_f1": []}
+#     best_f1 = 0.0
+#     model_path = (
+#         Path(__file__).parent.parent
+#         / Path("experiments")
+#         / Path(model_version)
+#         # / f"{model_type}_L{lambda_cl}"
+#         / model_type
+#     )
+#     model_path.mkdir(parents=True, exist_ok=True)
+
+#     run_metrics = []
+#     for epoch in range(epochs):
+#         # Training Phase
+#         model.train()
+#         total_train_loss = 0.0
+
+#         # Warm-up strategy for epoch 1
+#         if epoch == 0:
+#             for param_group in optimizer.param_groups:
+#                 param_group["lr"] = 1e-5
+
+#         for batch in train_loader:
+#             images = batch["image"].to(device)
+#             input_ids = batch["input_ids"].to(device)
+#             attention_mask = batch["attention_mask"].to(device)
+#             labels = batch["label"].to(device)
+#             # Extract Physics Modality (IAT, Jitter, Entropy)
+#             stats_vector = batch["stats"].to(device)
+
+#             optimizer.zero_grad()
+#             if model_version == "original":
+#                 logits, current_scale = model(images, input_ids, attention_mask)
+#             else:
+#                 logits, current_scale = model(
+#                     images, input_ids, attention_mask, stats_vector
+#                 )
+
+#             # Joint optimization: CE + CL
+#             loss_ce = criterion_ce(logits, labels)
+#             v_f = model.get_vision_features(images)
+#             loss_cl = contrastive_loss_func(v_f, labels, current_scale)
+
+#             loss = loss_ce + (lambda_cl * loss_cl)
+#             loss.backward()
+#             optimizer.step()
+#             total_train_loss += loss.item()
+
+#         if epoch > 0:
+#             scheduler.step()
+
+#         # Validation Phase
+#         val_metrics = validate(model, model_version, val_loader, device, lambda_cl)
+
+#         val_loss = val_metrics["loss"]
+#         val_acc = val_metrics["accuracy"]
+#         val_pre = val_metrics["precision"]
+#         val_re = val_metrics["recall"]
+#         val_f1 = val_metrics["f1_macro"]
+
+#         history["train_loss"].append(total_train_loss / len(train_loader))
+#         history["val_loss"].append(val_loss)
+#         history["val_f1"].append(val_f1)
+
+#         logging.info(
+#             f"Epoch {epoch+1}/{epochs} | Train Loss: {total_train_loss/len(train_loader):.4f} | "
+#             f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | Val F1: {val_f1:.4f}"
+#         )
+
+#         # Check early stopping condition
+#         early_stopping(val_f1)
+#         if early_stopping.stop_training:
+#             logging.info(
+#                 f"Early stopping triggered at epoch {epoch+1}. Training terminated."
+#             )
+#             break
+
+#         # Save the best model based on Macro F1 score
+#         if val_f1 > best_f1:
+#             best_f1 = val_f1
+#             logging.info(model_path)
+#             torch.save(model.state_dict(), model_path / "best_model.pt")
+#             logging.info(f"Best model saved with F1: {val_f1:.4f}")
+
+#     run_metrics.append([val_acc, val_pre, val_re, val_f1])
+#     save_metrics(run_metrics, model_type, model_version)
+#     plot_convergence(history, model_type, save_path=model_path)
+
+
 def train(
     model,
     model_version,
@@ -84,12 +283,17 @@ def train(
     early_stopping=None,
 ):
     """
-    Standardized Training Loop:
-    Implements joint optimization using Cross-Entropy and Contrastive Loss.
+    Optimized Tri-modal Training Loop :
+    - AdamW Optimizer for multimodal gradient stability.
+    - 5-Epoch Linear LR Warm-up.
+    - Scheduled Lambda increase (1.0 -> Target) over 20 epochs.
     """
 
     epochs = config["train"][model_version]["epochs"]
-    optimizer = optim.SGD(model.parameters(), lr=0.002, momentum=0.9)
+    warmup_epochs = 5
+    start_lambda = 1.0
+
+    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion_ce = nn.CrossEntropyLoss()
 
@@ -111,10 +315,18 @@ def train(
         model.train()
         total_train_loss = 0.0
 
-        # Warm-up strategy for epoch 1
-        if epoch == 0:
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = 1e-5
+        # --- 1. Dynamic Lambda Scheduling ---
+        # Linearly scale lambda from 1.0 to  chosen lambda_cl over 20 epochs
+        if epoch < 20:
+            current_lambda = start_lambda + (lambda_cl - start_lambda) * (epoch / 20)
+        else:
+            current_lambda = lambda_cl
+
+        # --- 2. Learning Rate Warm-up (Linear) ---
+        if epoch < warmup_epochs:
+            lr_scale = (epoch + 1) / warmup_epochs
+            for pg in optimizer.param_groups:
+                pg["lr"] = 1e-4 * lr_scale
 
         for batch in train_loader:
             images = batch["image"].to(device)
@@ -137,7 +349,7 @@ def train(
             v_f = model.get_vision_features(images)
             loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
-            loss = loss_ce + (lambda_cl * loss_cl)
+            loss = loss_ce + (current_lambda * loss_cl)
             loss.backward()
             optimizer.step()
             total_train_loss += loss.item()
