@@ -162,8 +162,8 @@ def validate(
                     # The predicted class is the one with the highest confidence (diagonal element)
                     current_batch_preds.append(torch.argmax(confidences).item())
 
-            all_preds.extend(current_batch_preds)
-            all_labels.extend(labels.cpu().numpy())
+        all_preds.extend(current_batch_preds)
+        all_labels.extend(labels.cpu().numpy())
 
     # Standardized Performance Metrics
     metrics = {
