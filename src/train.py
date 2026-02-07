@@ -313,6 +313,8 @@ def train(
     warmup_epochs = 5
     start_lambda = 1.0
 
+    # optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion_ce = nn.CrossEntropyLoss()
@@ -335,18 +337,23 @@ def train(
         model.train()
         total_train_loss = 0.0
 
-        # --- 1. Dynamic Lambda Scheduling ---
-        # Linearly scale lambda from 1.0 to  chosen lambda_cl over 20 epochs
-        if epoch < 20:
-            current_lambda = start_lambda + (lambda_cl - start_lambda) * (epoch / 20)
-        else:
-            current_lambda = lambda_cl
+        # # --- 1. Dynamic Lambda Scheduling ---
+        # # Linearly scale lambda from 1.0 to  chosen lambda_cl over 20 epochs
+        # if epoch < 20:
+        #     current_lambda = start_lambda + (lambda_cl - start_lambda) * (epoch / 20)
+        # else:
+        #     current_lambda = lambda_cl
 
-        # --- 2. Learning Rate Warm-up (Linear) ---
-        if epoch < warmup_epochs:
-            lr_scale = (epoch + 1) / warmup_epochs
-            for pg in optimizer.param_groups:
-                pg["lr"] = 1e-4 * lr_scale
+        # # --- 2. Learning Rate Warm-up (Linear) ---
+        # if epoch < warmup_epochs:
+        #     lr_scale = (epoch + 1) / warmup_epochs
+        #     for pg in optimizer.param_groups:
+        #         pg["lr"] = 1e-4 * lr_scale
+
+        # Warm-up strategy for epoch 1
+        if epoch == 0:
+            for param_group in optimizer.param_groups:
+                param_group["lr"] = 1e-5
 
         for batch in train_loader:
             images = batch["image"].to(device)
@@ -369,7 +376,8 @@ def train(
             v_f = model.get_vision_features(images)
             loss_cl = contrastive_loss_func(v_f, labels, current_scale)
 
-            loss = loss_ce + (current_lambda * loss_cl)
+            # loss = loss_ce + (current_lambda * loss_cl)
+            loss = loss_ce + (lambda_cl * loss_cl)
             loss.backward()
             optimizer.step()
             total_train_loss += loss.item()
