@@ -155,12 +155,14 @@ def validate(
                     else:
                         combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
 
-                    # Pass all K hypotheses through the MLP at once
-                    logits = model.fusion_head(combined)  # [K_hypotheses, K_classes]
+                        # Pass all K hypotheses through the MLP at once
+                        logits = model.fusion_head(
+                            combined
+                        )  # [K_hypotheses, K_classes]
 
-                    confidences = torch.diag(logits)
-                    # The predicted class is the one with the highest confidence (diagonal element)
-                    current_batch_preds.append(torch.argmax(confidences).item())
+                        confidences = torch.diag(logits)
+                        # The predicted class is the one with the highest confidence (diagonal element)
+                        current_batch_preds.append(torch.argmax(confidences).item())
 
         all_preds.extend(current_batch_preds)
         all_labels.extend(labels.cpu().numpy())
