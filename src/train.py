@@ -24,7 +24,15 @@ from src.utils.utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(model, model_version, device, config, use_dynamic_prompts, lambda_cl=5.0):
+def validate(
+    model,
+    model_version,
+    args,
+    val_loader,
+    device,
+    config,
+    lambda_cl=5.0,
+):
     """
     Standardized Validation Function:
     Calculates performance metrics using joint loss (CE + CL).
@@ -42,19 +50,19 @@ def validate(model, model_version, device, config, use_dynamic_prompts, lambda_c
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
-    val_loader = get_dataloader(
-        npz_path=NPZ_PATH,
-        tokenizer=TOKENIZER_NAME,
-        batch_size=BATCH_SIZE,
-        max_length=MAX_LENGTH,
-        use_dynamic_prompts=use_dynamic_prompts,
-    )
+    # val_loader = get_dataloader(
+    #     npz_path=NPZ_PATH,
+    #     tokenizer=TOKENIZER_NAME,
+    #     batch_size=BATCH_SIZE,
+    #     max_length=MAX_LENGTH,
+    #     use_dynamic_prompts=use_dynamic_prompts,
+    # )
 
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
     class_names = val_loader.dataset.dataset.class_names
 
     # PRE-ENCODE static bank for Original variant
-    if not use_dynamic_prompts:
+    if not args.use_stats_prompts:
         static_descriptor_bank = get_original_descriptor_bank(
             model, tokenizer, class_names, MAX_LENGTH, device
         )
@@ -87,7 +95,7 @@ def validate(model, model_version, device, config, use_dynamic_prompts, lambda_c
             current_batch_preds = []
 
             # Variant 1: Original Prompts (Global Static Matching)
-            if not use_dynamic_prompts:
+            if not args.use_stats_prompts:
                 # Vision features normalized for similarity
                 v_e = model.get_vision_features(images)
                 # Match against all K classes in the static bank
@@ -102,7 +110,7 @@ def validate(model, model_version, device, config, use_dynamic_prompts, lambda_c
 
                 v_e = model.get_vision_features(images)
                 s_e = None
-                if model.use_stats:
+                if args.use_stats:
                     s_e = model.stats_proj(stats)  # [Batch, 512]
                     s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
 
@@ -110,7 +118,7 @@ def validate(model, model_version, device, config, use_dynamic_prompts, lambda_c
 
                 # Must iterate because descriptions depend on specific sample statistics
                 for i in range(len(images)):
-                    if not use_dynamic_prompts:
+                    if not args.use_stats_prompts:
                         # Use the pre-encoded bank you made at the start of the 'run'
                         t_e_all = static_descriptor_bank  # [K, 1024]
                     else:
@@ -288,6 +296,7 @@ def train(
     model_type,
     train_loader,
     val_loader,
+    args,
     config,
     device,
     lambda_cl,
@@ -369,7 +378,26 @@ def train(
             scheduler.step()
 
         # Validation Phase
-        val_metrics = validate(model, model_version, val_loader, device, lambda_cl)
+        if model_version == "original":
+            val_metrics = validate(
+                model,
+                model_version,
+                device,
+                args=args,
+                val_loader=val_loader,
+                config=config,
+                lambda_cl=lambda_cl,
+            )
+        else:
+            val_metrics = validate(
+                model,
+                model_version,
+                args=args,
+                device=device,
+                val_loader=val_loader,
+                config=config,
+                lambda_cl=lambda_cl,
+            )
 
         val_loss = val_metrics["loss"]
         val_acc = val_metrics["accuracy"]

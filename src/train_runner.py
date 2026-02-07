@@ -74,6 +74,7 @@ def run_experiment(args, config, device):
 
     train(
         model=model,
+        args=args,
         model_version=args.model_version,
         model_type=unique_tag,
         train_loader=train_loader,

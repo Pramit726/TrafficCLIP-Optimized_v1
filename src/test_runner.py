@@ -67,8 +67,8 @@ def run_test_experiment(args):
         device=device,
         model_version=args.model_version,
         model_type=exp_tag,
+        args=args,
         config=config,
-        use_dynamic_prompts=args.use_stats_prompts,
         num_runs=args.num_runs,
         seed=args.seed,
     )

@@ -25,9 +25,9 @@ def test_and_evaluate(
     model,
     device,
     model_type,
+    args,
     model_version,
     config,
-    use_dynamic_prompts,
     num_runs=3,
     seed=42,
 ):
@@ -64,7 +64,7 @@ def test_and_evaluate(
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=current_seed,
-            use_dynamic_prompts=use_dynamic_prompts,
+            use_dynamic_prompts=args.use_stats_prompts,  # Phase 2 Toggle
         )
 
         class_names = test_loader.dataset.dataset.class_names
@@ -73,7 +73,7 @@ def test_and_evaluate(
         labels_list = []
 
         # PRE-ENCODE static bank for Original variant
-        if not use_dynamic_prompts:
+        if not args.use_stats_prompts:
             static_descriptor_bank = get_original_descriptor_bank(
                 model, tokenizer, class_names, MAX_LENGTH, device
             )
@@ -87,7 +87,7 @@ def test_and_evaluate(
                 stats = batch["stats"].to(device)
 
                 # Variant 1: Original Prompts (Global Static Matching)
-                if not use_dynamic_prompts:
+                if not args.use_stats_prompts:
                     # Vision features normalized for similarity
                     v_e = model.get_vision_features(images)
                     # Match against all K classes in the static bank
@@ -102,7 +102,7 @@ def test_and_evaluate(
 
                     v_e = model.get_vision_features(images)
                     s_e = None
-                    if model.use_stats:
+                    if args.use_stats:
                         s_e = model.stats_proj(stats)  # [Batch, 512]
                         s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
 
@@ -110,7 +110,7 @@ def test_and_evaluate(
 
                     # Must iterate because descriptions depend on specific sample statistics
                     for i in range(len(images)):
-                        if not use_dynamic_prompts:
+                        if not args.use_stats_prompts:
                             # Use the pre-encoded bank you made at the start of the 'run'
                             t_e_all = static_descriptor_bank  # [K, 1024]
                         else:
