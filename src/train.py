@@ -95,7 +95,7 @@ def validate(
             current_batch_preds = []
 
             # Variant 1: Original Prompts (Global Static Matching)
-            if not args.use_stats_prompts:
+            if model_version == "original":
                 # Vision features normalized for similarity
                 v_e = model.get_vision_features(images)
                 # Match against all K classes in the static bank
@@ -115,6 +115,7 @@ def validate(
                     s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
 
                 all_preds = []
+                all_labels = []
 
                 # Must iterate because descriptions depend on specific sample statistics
                 for i in range(len(images)):
