@@ -92,20 +92,52 @@ def validate(
 
             # PREDICTION STEP
             # List for this specific batch's predictions
-            current_batch_preds = []
+            batch_preds = []
 
-            # Variant 1: Original Prompts (Global Static Matching)
+            # PATH A: Original Model (Cosine Similarity)
             if model_version == "original":
-                # Vision features normalized for similarity
                 v_e = model.get_vision_features(images)
-                # Match against all K classes in the static bank
-                logits = (
-                    torch.matmul(v_e, static_descriptor_bank.T)
-                    * model.logit_scale.exp()
-                )
-                preds = torch.argmax(logits, dim=1)
+                if not args.use_stats_prompts:
+                    # Static Matching
+                    logits = (
+                        torch.matmul(v_e, static_descriptor_bank.T)
+                        * model.logit_scale.exp()
+                    )
+                else:
+                    # Dynamic Matching for Original
+                    for i in range(len(images)):
+                        m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
 
-            # Variant 2: Statistical Prompts (Global Dynamic Matching)
+                        # Generate K descriptions for THIS specific image's behavior
+                        sample_prompts = [
+                            f"A network traffic gray photo of class {name} with "
+                            f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+                            f"and {m_entropy:.2f} byte entropy."
+                            for name in class_names
+                        ]
+
+                        encoded = tokenizer(
+                            sample_prompts,
+                            padding="max_length",
+                            truncation=True,
+                            return_tensors="pt",
+                            max_length=MAX_LENGTH,
+                        ).to(device)
+
+                        t_e_all = model.get_text_features(
+                            encoded["input_ids"], encoded["attention_mask"]
+                        )  # [K, 1024]
+                        # Match against all K classes in the static bank
+                        sim = (
+                            torch.matmul(v_e[i : i + 1], t_e_all.T)
+                            * model.logit_scale.exp()
+                        )
+                        batch_preds.append(torch.argmax(sim, dim=1).item())
+
+                if not args.use_stats_prompts:  # Handle static case
+                    batch_preds = torch.argmax(logits, dim=1).cpu().numpy().tolist()
+
+            # PATH B: Optimized Model (MLP Fusion)
             else:
 
                 v_e = model.get_vision_features(images)
@@ -113,9 +145,6 @@ def validate(
                 if args.use_stats:
                     s_e = model.stats_proj(stats)  # [Batch, 512]
                     s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
-
-                all_preds = []
-                all_labels = []
 
                 # Must iterate because descriptions depend on specific sample statistics
                 for i in range(len(images)):
@@ -140,11 +169,12 @@ def validate(
                             return_tensors="pt",
                             max_length=MAX_LENGTH,
                         ).to(device)
-                    t_e_all = model.get_text_features(
-                        encoded["input_ids"], encoded["attention_mask"]
-                    )  # [K, 1024]
 
-                    # Expand current image and stats to match K class hypotheses
+                        t_e_all = model.get_text_features(
+                            encoded["input_ids"], encoded["attention_mask"]
+                        )  # [K, 1024]
+
+                    # Hypothesis Testing
                     num_classes = len(class_names)
                     v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
 
@@ -156,17 +186,16 @@ def validate(
                     else:
                         combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
 
-                        # Pass all K hypotheses through the MLP at once
-                        logits = model.fusion_head(
-                            combined
-                        )  # [K_hypotheses, K_classes]
+                    # Pass all K hypotheses through the MLP at once
+                    logits_hyp = model.fusion_head(
+                        combined
+                    )  # [K_hypotheses, K_classes]
+                    confidences = torch.diag(logits_hyp)
+                    # The predicted class is the one with the highest confidence (diagonal element)
+                    batch_preds.append(torch.argmax(confidences).item())
 
-                        confidences = torch.diag(logits)
-                        # The predicted class is the one with the highest confidence (diagonal element)
-                        current_batch_preds.append(torch.argmax(confidences).item())
-
-        all_preds.extend(current_batch_preds)
-        all_labels.extend(labels.cpu().numpy())
+            all_preds.extend(batch_preds)
+            all_labels.extend(labels.cpu().numpy())
 
     # Standardized Performance Metrics
     metrics = {
