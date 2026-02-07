@@ -24,12 +24,7 @@ from src.utils.utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def validate(
-    model,
-    device,
-    config,
-    use_dynamic_prompts,
-):
+def validate(model, model_version, device, config, use_dynamic_prompts, lambda_cl=5.0):
     """
     Standardized Validation Function:
     Calculates performance metrics using joint loss (CE + CL).
@@ -72,6 +67,22 @@ def validate(
             labels = batch["label"].to(device)
             stats = batch["stats"].to(device)
 
+            # LOSS CALCULATION
+            if model_version == "original":
+                logits_gt, current_scale = model(images, input_ids, attention_mask)
+            else:
+                logits_gt, current_scale = model(
+                    images, input_ids, attention_mask, stats
+                )
+
+            loss_ce = criterion_ce(logits_gt, labels)
+            v_f = model.get_vision_features(images)
+            loss_cl = contrastive_loss_func(v_f, labels, current_scale)
+
+            loss = loss_ce + (lambda_cl * loss_cl)
+            total_val_loss += loss.item()
+
+            # PREDICTION STEP
             # List for this specific batch's predictions
             current_batch_preds = []
 
