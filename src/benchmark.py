@@ -158,8 +158,8 @@ def test_and_evaluate(
 
                     preds = torch.tensor(batch_preds).to(device)
 
-                preds_list.extend(preds.cpu().numpy())
-                labels_list.extend(labels.cpu().numpy())
+            preds_list.extend(preds.cpu().numpy())
+            labels_list.extend(labels.cpu().numpy())
 
         # Calculate metrics with zero_division safety
         acc = accuracy_score(labels_list, preds_list)
