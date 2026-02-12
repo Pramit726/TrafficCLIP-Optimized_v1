@@ -48,31 +48,32 @@ def test_and_evaluate(
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
+    # Pre-loading tokenizer once saves massive time across passes
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+
     logging.info(f"Starting evaluation for {model_type} ({num_runs} passes)")
 
     for run in range(num_runs):
-        # Generate a unique seed for this specific run
         current_seed = seed + run
         set_seed(current_seed)
-        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-        # Recreate dataloader with the new seed to get a different stratified test split
+        # Fresh loaders for every pass to ensure stratification seed is applied
         _, _, test_loader = get_dataloader(
             npz_path=NPZ_PATH,
             tokenizer=TOKENIZER_NAME,
-            # prompts=ORIGINAL_PROMPTS,
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=current_seed,
-            use_dynamic_prompts=args.use_stats_prompts,  # Phase 2 Toggle
+            use_dynamic_prompts=args.use_stats_prompts,
         )
 
         class_names = test_loader.dataset.dataset.class_names
-
+        num_classes = len(class_names)
         preds_list = []
         labels_list = []
 
-        # PRE-ENCODE static bank for Original variant
+        # Pre-encode static bank if not using dynamic prompts
+        static_descriptor_bank = None
         if not args.use_stats_prompts:
             static_descriptor_bank = get_original_descriptor_bank(
                 model, tokenizer, class_names, MAX_LENGTH, device
@@ -81,49 +82,42 @@ def test_and_evaluate(
         with torch.no_grad():
             for batch in test_loader:
                 images = batch["image"].to(device)
-                input_ids = batch["input_ids"].to(device)
-                attention_mask = batch["attention_mask"].to(device)
                 labels = batch["label"].to(device)
                 stats = batch["stats"].to(device)
 
-                # Variant 1: Original Prompts (Global Static Matching)
-                if not args.use_stats_prompts:
-                    # Vision features normalized for similarity
+                # FIX 1: Initialize current_batch_preds at the start of every batch
+                current_batch_preds = []
+
+                # --- PATH A: Original / Static Logic ---
+                if model_version == "original" and not args.use_stats_prompts:
                     v_e = model.get_vision_features(images)
-                    # Match against all K classes in the static bank
                     logits = (
                         torch.matmul(v_e, static_descriptor_bank.T)
                         * model.logit_scale.exp()
                     )
-                    preds = torch.argmax(logits, dim=1)
+                    batch_preds_tensor = torch.argmax(logits, dim=1)
+                    current_batch_preds = batch_preds_tensor.cpu().numpy().tolist()
 
-                # Variant 2: Statistical Prompts (Global Dynamic Matching)
+                # --- PATH B: Optimized / Dynamic / MLP Logic ---
                 else:
-
                     v_e = model.get_vision_features(images)
                     s_e = None
-                    if args.use_stats:
-                        s_e = model.stats_proj(stats)  # [Batch, 512]
+                    if hasattr(model, "use_stats") and model.use_stats:
+                        s_e = model.stats_proj(stats)
                         s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
 
-                    batch_preds = []
-
-                    # Must iterate because descriptions depend on specific sample statistics
+                    # Iterate through batch for Hypothesis Testing
                     for i in range(len(images)):
                         if not args.use_stats_prompts:
-                            # Use the pre-encoded bank you made at the start of the 'run'
-                            t_e_all = static_descriptor_bank  # [K, 1024]
+                            t_e_all = static_descriptor_bank
                         else:
                             m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
-
-                            # Generate K descriptions for THIS specific image's behavior
                             sample_prompts = [
                                 f"A network traffic gray photo of class {name} with "
                                 f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
                                 f"and {m_entropy:.2f} byte entropy."
                                 for name in class_names
                             ]
-
                             encoded = tokenizer(
                                 sample_prompts,
                                 padding="max_length",
@@ -131,51 +125,44 @@ def test_and_evaluate(
                                 return_tensors="pt",
                                 max_length=MAX_LENGTH,
                             ).to(device)
-                        t_e_all = model.get_text_features(
-                            encoded["input_ids"], encoded["attention_mask"]
-                        )  # [K, 1024]
+                            t_e_all = model.get_text_features(
+                                encoded["input_ids"], encoded["attention_mask"]
+                            )
 
-                        # Expand current image and stats to match K class hypotheses
-                        num_classes = len(class_names)
-                        v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
-
+                        # Multi-modal Fusion
+                        v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)
                         if s_e is not None:
-                            s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)  # [K, 512]
-                            combined = torch.cat(
-                                (v_e_hyp, t_e_all, s_e_hyp), dim=1
-                            )  # [K, 2560]
+                            s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)
+                            combined = torch.cat((v_e_hyp, t_e_all, s_e_hyp), dim=1)
                         else:
-                            combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
+                            combined = torch.cat((v_e_hyp, t_e_all), dim=1)
 
-                        # Pass all K hypotheses through the MLP at once
-                        logits = model.fusion_head(
-                            combined
-                        )  # [K_hypotheses, K_classes]
+                        # Logic Check: Use fusion_head if optimized, else Cosine Sim
+                        if hasattr(model, "fusion_head"):
+                            logits_hyp = model.fusion_head(combined)
+                            confidences = torch.diag(logits_hyp)
+                        else:
+                            # Fallback for dynamic prompts on original model
+                            confidences = (
+                                torch.matmul(v_e[i : i + 1], t_e_all.T)
+                                * model.logit_scale.exp()
+                            ).squeeze()
 
-                        confidences = torch.diag(logits)
-                        # The predicted class is the one with the highest confidence (diagonal element)
-                        batch_preds.append(torch.argmax(confidences).item())
+                        current_batch_preds.append(torch.argmax(confidences).item())
 
-                    preds = torch.tensor(batch_preds).to(device)
+                # FIX 2: Standardized extend call
+                preds_list.extend(current_batch_preds)
+                labels_list.extend(labels.cpu().numpy().tolist())
 
-            preds_list.extend(preds.cpu().numpy())
-            labels_list.extend(labels.cpu().numpy())
-
-        # Calculate metrics with zero_division safety
+        # Metrics calculation
         acc = accuracy_score(labels_list, preds_list)
-        pr = precision_score(
-            labels_list, preds_list, average="macro", zero_division=0.0
-        )
-        rc = recall_score(labels_list, preds_list, average="macro", zero_division=0.0)
         f1 = f1_score(labels_list, preds_list, average="macro", zero_division=0.0)
-
-        run_metrics.append([acc, pr, rc, f1])
+        run_metrics.append([acc, f1])  # Add PR/RC as needed
 
         if f1 > best_f1:
             best_f1 = f1
-            best_preds = preds_list
-            all_labels = labels_list
-            # class_names = test_loader.dataset.dataset.class_names
+            best_preds = list(preds_list)
+            all_labels = list(labels_list)
 
         logging.info(
             f"Pass {run+1} (Seed {current_seed}): Accuracy={acc:.4f}, Macro F1={f1:.4f}"

@@ -1,30 +1,9 @@
-Commands
-<!-- python -m venv stad
-stad\Scripts\activate
-pip install -e. -->
-conda-forge
-conda env create -f environment.yml
-conda activate traffic-opt
-pip install -e.
-conda env update -f environment.yml
+# TrafficCLIP-Optimized
 
+Performance-optimized traffic classification system built using CLIP-based architecture with enhanced convergence and improved accuracy.
 
-Dataset
-https://raw.githubusercontent.com/yungshenglu/USTC-TFC2016/master
+## 📄 Documentation
 
-References
+- **Project Report:**  
+  https://drive.google.com/file/d/1SkTGOEU_UNFAQmW7-YLkO4Pb6ahlSVbA/view
 
-https://www.tutorialspoint.com/ipv4/ipv4_packet_structure.htm
-https://huggingface.co/google-bert/bert-base-uncased
-
-Guthub references
-git init
-git add README.md
-git commit -m "first commit"
-git branch -M main
-git remote add origin https://github.com/Pramit726/TrafficCLIP-Optimized 
-git push -u origin main
-
-References:
-
-bash src/run_train_b1.sh

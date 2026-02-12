@@ -45,7 +45,7 @@ def validate(
     criterion_ce = torch.nn.CrossEntropyLoss()
 
     # Load configuration
-    NPZ_PATH = config["paths"]["output_data_file"]
+    NPZ_PATH = config["paths"]["mini_output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
@@ -347,7 +347,7 @@ def train(
 
     # optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
     # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=2e-3, weight_decay=0.01)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
     criterion_ce = nn.CrossEntropyLoss()
 
@@ -392,6 +392,7 @@ def train(
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             labels = batch["label"].to(device)
+            # logging.info(batch["raw_text"])
             # Extract Physics Modality (IAT, Jitter, Entropy)
             stats_vector = batch["stats"].to(device)
 
@@ -487,7 +488,7 @@ if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     try:
-        NPZ_PATH = config["paths"]["output_data_file"]
+        NPZ_PATH = config["paths"]["mini_output_data_file"]
         TOKENIZER_NAME = config["preprocess"]["tokenizer"]
         MAX_LENGTH = config["preprocess"]["max_length"]
         SEED = config["train"]["seed"]
