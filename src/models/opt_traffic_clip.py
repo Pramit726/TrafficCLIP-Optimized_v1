@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.quantization
 
 from src.models.traffic_clip import TrafficCLIP
 from src.utils.utils import load_config
@@ -73,6 +74,9 @@ class OptimizedTrafficCLIP(TrafficCLIP):
         # Stats Projection Head for Tri-modal logic
         self.use_stats = use_stats
 
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
+
         # Fusion Head: Non-Linear MLP instead of Cosine Similarity
         if self.use_stats:
             if stats_input_dim is None:
@@ -96,6 +100,11 @@ class OptimizedTrafficCLIP(TrafficCLIP):
         2. Extract text features (BERT Behavioral Anchors)
         3. Concatenate and pass through MLP Fusion Head
         """
+
+        # Quantize Inputs
+        images = self.quant(images)
+        if stats_vector is not None:
+            stats_vector = self.quant(stats_vector)
 
         # Vision Modality Representation Learning
         v_e = self.get_vision_features(images)  # [Batch, 1024]
