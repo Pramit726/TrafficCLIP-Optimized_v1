@@ -28,3 +28,6 @@ git push -u origin main
 References:
 
 bash src/run_train_b1.sh
+
+train_runner
+test_runner

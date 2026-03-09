@@ -53,11 +53,11 @@ train:
   seed : 42
   original:
     batch_size: 64
-    epochs: 2 # 100
+    epochs: 100 # 100
     # lambda_cl : 1.0
   optimized:
     batch_size: 64
-    epochs: 2 # 100
+    epochs: 100 # 100
     # lambda_cl : 2.0
   
 early_stopping:
