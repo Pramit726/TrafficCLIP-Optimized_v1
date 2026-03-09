@@ -5,10 +5,14 @@ dataset:
       Benign:
         - name: "Skype"
           extension: ".pcap"
-        - name: "Gmail"
+        - name: "MySQL"
           extension: ".pcap"
         - name: "BitTorrent"
           extension: ".pcap"
+        - name: "Facetime"
+          extension: ".pcap"
+        - name: "Weibo"
+          extension: ".7z"
       Malware:
         - name: "Zeus"
           extension: ".pcap"
@@ -16,6 +20,15 @@ dataset:
           extension: ".pcap"
         - name: "Cridex"
           extension: ".7z"
+        - name: "Geodo"
+          extension: ".7z"
+        - name: "Miuref"
+          extension: ".pcap"
+        
+user:
+  name: "pramitde726"
+  repo: "Optimized-TrafficCLIP-Edge"
+  ht_repo: "Optimized-TrafficCLIP-Edge-tuning"
 
 # prompts:
 #   BitTorrent : "Sparse but highly concurrent network flow with massive peer-to-peer connection establishment and aggressive packet-size distribution for distributed data chunk retrieval."
@@ -40,11 +53,11 @@ train:
   seed : 42
   original:
     batch_size: 64
-    epochs: 100
+    epochs: 2 # 100
     # lambda_cl : 1.0
   optimized:
     batch_size: 64
-    epochs: 100
+    epochs: 2 # 100
     # lambda_cl : 2.0
   
 early_stopping:

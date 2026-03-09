@@ -1,6 +1,9 @@
 import argparse
 import logging
 
+import dagshub
+import mlflow
+
 # import numpy as np
 import torch
 
@@ -11,17 +14,18 @@ from src.dataset import get_dataloader
 from src.train import train
 from src.utils.utils import load_config, set_seed
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+# logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
-def run_experiment(args, config, device):
+def run_experiment(args, config, device, is_final=False, is_tune=False):
     """
     Orchestrates a single ablation run based on command line arguments.
     """
     # Set global seed for reproducibility
     set_seed(args.seed)
     train_loader, val_loader, _ = get_dataloader(
-        npz_path=config["paths"]["output_data_file"],
+        # npz_path=config["paths"]["output_data_file"],
+        npz_path=config["paths"]["mini_output_data_file"],
         tokenizer=config["preprocess"]["tokenizer"],
         batch_size=config["preprocess"]["batch_size"],
         max_length=config["preprocess"]["max_length"],
@@ -72,18 +76,63 @@ def run_experiment(args, config, device):
             f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
         )
 
-    train(
-        model=model,
-        args=args,
-        model_version=args.model_version,
-        model_type=unique_tag,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        config=config,
-        device=device,
-        lambda_cl=args.lambda_cl,
-        early_stopping=early_stopping,
-    )
+    from contextlib import nullcontext
+
+    # --- MLflow Logging ---
+    if not is_tune:
+        mlflow.set_experiment("TrafficCLIP_Ablation_Study")
+        run_ctx = mlflow.start_run(run_name=unique_tag)
+    else:
+        run_ctx = nullcontext()
+
+    with run_ctx:
+        if not is_tune:
+            mlflow.log_params(vars(args))
+
+        if is_final:
+            combined_dataset = torch.utils.data.ConcatDataset(
+                [train_loader.dataset, val_loader.dataset]
+            )
+
+            train_loader = torch.utils.data.DataLoader(
+                combined_dataset,
+                batch_size=config["preprocess"]["batch_size"],
+                shuffle=True,
+                num_workers=4,
+            )
+
+        best_f1 = train(
+            model=model,
+            args=args,
+            model_version=args.model_version,
+            model_type=unique_tag,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            config=config,
+            device=device,
+            lambda_cl=args.lambda_cl,
+            early_stopping=early_stopping,
+            optimizer=None,
+            scheduler=None,
+        )
+
+        # else:
+        #     best_f1 = train(
+        #         model=model,
+        #         args=args,
+        #         model_version=args.model_version,
+        #         model_type=unique_tag,
+        #         train_loader=train_loader,
+        #         val_loader=val_loader,
+        #         config=config,
+        #         device=device,
+        #         lambda_cl=args.lambda_cl,
+        #         early_stopping=early_stopping,
+        #         optimizer=None,
+        #         scheduler=None,
+        #     )
+
+    return best_f1
 
 
 if __name__ == "__main__":
@@ -109,9 +158,51 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stats_input_dim", type=int, default=3, help="Number of statistical features"
     )
+
+    parser.add_argument(
+        "--lr", type=float, default=1e-4, help="Learning rate for training"
+    )
     args = parser.parse_args()
 
     config = load_config()
+    USER_NAME = config["user"]["name"]
+    REPO_NAME = config["user"]["repo"]
+    dagshub.init(
+        repo_owner=USER_NAME,
+        repo_name=REPO_NAME,
+        mlflow=True,
+    )
+
+    import logging
+
+    # from importlib import reload
+    # reload(logging)
+    # # Updated logging setup to save to a file
+    # log_file_name = "training.log"
+    # logging.basicConfig(
+    #     level=logging.INFO,
+    #     format="%(asctime)s [%(levelname)s] %(message)s",
+    #     handlers=[
+    #         logging.StreamHandler(),  # Keep terminal logs
+    #         logging.FileHandler(log_file_name),  # Save to this file
+    #     ],
+    # )
+    logger = logging.getLogger("TrafficCLIP")  # Named logger
+    logger.setLevel(logging.INFO)
+
+    if not logger.handlers:
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+        # Stream (Terminal)
+        sh = logging.StreamHandler()
+        sh.setFormatter(formatter)
+        logger.addHandler(sh)
+
+        # File
+        fh = logging.FileHandler("training.log")
+        fh.setFormatter(formatter)
+        logger.addHandler(fh)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     run_experiment(args, config, device)

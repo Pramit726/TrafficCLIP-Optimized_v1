@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -333,24 +334,68 @@ def train(
     device,
     lambda_cl,
     early_stopping=None,
+    optimizer=None,
+    scheduler=None,
 ):
     """
-    Optimized Tri-modal Training Loop :
-    - AdamW Optimizer for multimodal gradient stability.
-    - 5-Epoch Linear LR Warm-up.
-    - Scheduled Lambda increase (1.0 -> Target) over 20 epochs.
+    Optimized Tri-modal Training Loop
     """
 
     epochs = config["train"][model_version]["epochs"]
     warmup_epochs = 5
-    start_lambda = 1.0
+    lr = args.lr if hasattr(args, "lr") else 1e-4
 
-    # optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
-    # scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    optimizer = optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0.01)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+    if optimizer is None:
+        wd = args.weight_decay if hasattr(args, "weight_decay") else 0.01
+        opt_type = config["train"].get("optimizer_type", "adamw").lower()
+
+        if opt_type == "adamw":
+            optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=wd)
+        elif opt_type == "sgd":
+            optimizer = optim.SGD(
+                model.parameters(), lr=lr, momentum=0.9, weight_decay=wd
+            )
+        else:  # Default to Adam
+            optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=wd)
+    if scheduler is None:
+        sched_type = config["train"].get("scheduler_type", "cosine").lower()
+        if sched_type == "cosine":
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+        elif sched_type == "plateau":
+            scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+                optimizer, mode="max", factor=0.5, patience=3
+            )
+        else:
+            scheduler = None
+
     criterion_ce = nn.CrossEntropyLoss()
+    TOKENIZER_NAME = config["preprocess"]["tokenizer"]
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+    # class_prompts = [
+    #     f"A network traffic gray photo of class {name}."
+    #     for name in train_loader.dataset.dataset.class_names
+    # ]
+    # class_tokens = tokenizer(
+    #     class_prompts,
+    #     padding=True,
+    #     truncation=True,
+    #     return_tensors="pt",
+    #     max_length=config["preprocess"]["max_length"],
+    # ).to(device)
+    # logging.info("Number of classes: %d", len(train_loader.dataset.dataset.class_names))
 
+    class_prompts = [
+        f"A network traffic gray photo of class {name}."
+        for name in val_loader.dataset.dataset.class_names
+    ]
+
+    class_tokens = tokenizer(
+        class_prompts,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+        max_length=config["preprocess"]["max_length"],
+    ).to(device)
     # History dictionary for convergence plot
     history = {"train_loss": [], "val_loss": [], "val_f1": []}
     best_f1 = 0.0
@@ -369,19 +414,6 @@ def train(
         model.train()
         total_train_loss = 0.0
 
-        # # --- 1. Dynamic Lambda Scheduling ---
-        # # Linearly scale lambda from 1.0 to  chosen lambda_cl over 20 epochs
-        # if epoch < 20:
-        #     current_lambda = start_lambda + (lambda_cl - start_lambda) * (epoch / 20)
-        # else:
-        #     current_lambda = lambda_cl
-
-        # # --- 2. Learning Rate Warm-up (Linear) ---
-        # if epoch < warmup_epochs:
-        #     lr_scale = (epoch + 1) / warmup_epochs
-        #     for pg in optimizer.param_groups:
-        #         pg["lr"] = 1e-4 * lr_scale
-
         # Warm-up strategy for epoch 1
         if epoch == 0:
             for param_group in optimizer.param_groups:
@@ -397,7 +429,9 @@ def train(
 
             optimizer.zero_grad()
             if model_version == "original":
-                logits, current_scale = model(images, input_ids, attention_mask)
+                logits, current_scale = model(
+                    images, class_tokens.input_ids, class_tokens.attention_mask
+                )
             else:
                 logits, current_scale = model(
                     images, input_ids, attention_mask, stats_vector
@@ -449,6 +483,16 @@ def train(
         history["val_loss"].append(val_loss)
         history["val_f1"].append(val_f1)
 
+        # --- MLflow Metric Logging ---
+        mlflow.log_metric(
+            "train_loss", total_train_loss / len(train_loader), step=epoch
+        )
+        mlflow.log_metric("val_loss", val_metrics["loss"], step=epoch)
+        mlflow.log_metric("val_acc", val_metrics["accuracy"], step=epoch)
+        mlflow.log_metric("val_precision", val_metrics["precision"], step=epoch)
+        mlflow.log_metric("val_recall", val_metrics["recall"], step=epoch)
+        mlflow.log_metric("val_f1_macro", val_metrics["f1_macro"], step=epoch)
+
         logging.info(
             f"Epoch {epoch+1}/{epochs} | Train Loss: {total_train_loss/len(train_loader):.4f} | "
             f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.4f} | Val F1: {val_f1:.4f}"
@@ -467,11 +511,22 @@ def train(
             best_f1 = val_f1
             logging.info(model_path)
             torch.save(model.state_dict(), model_path / "best_model.pt")
+            # mlflow.pytorch.log_model(model, name="best_model")
             logging.info(f"Best model saved with F1: {val_f1:.4f}")
+
+    # Finalize: Load best model, log to MLflow, save metrics, and plot convergence
+    best_weights = torch.load(model_path / "best_model.pt", map_location=device)
+    model.load_state_dict(best_weights)
+
+    mlflow.pytorch.log_model(model, name="best_model")
 
     run_metrics.append([val_acc, val_pre, val_re, val_f1])
     save_metrics(run_metrics, model_type, model_version)
-    plot_convergence(history, model_type, save_path=model_path)
+    fig = plot_convergence(history, model_type, save_path=model_path)
+    mlflow.log_figure(fig, f"{model_type}_convergence.png")
+    mlflow.log_artifact(str(model_path / f"{model_type}_convergence.png"))
+
+    return best_f1
 
 
 if __name__ == "__main__":

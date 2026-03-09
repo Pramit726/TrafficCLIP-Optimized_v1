@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+import mlflow
 import numpy as np
 import pandas as pd
 import torch
@@ -43,7 +44,7 @@ def test_and_evaluate(
     best_preds = None
     all_labels = None
 
-    NPZ_PATH = config["paths"]["output_data_file"]
+    NPZ_PATH = config["paths"]["mini_output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
@@ -169,6 +170,12 @@ def test_and_evaluate(
         rc = recall_score(labels_list, preds_list, average="macro", zero_division=0.0)
         f1 = f1_score(labels_list, preds_list, average="macro", zero_division=0.0)
 
+        # --- MLflow Pass Logging ---
+        mlflow.log_metric("pass_accuracy", acc, step=run)
+        mlflow.log_metric("pass_f1_macro", f1, step=run)
+        mlflow.log_metric("pass_precision", pr, step=run)
+        mlflow.log_metric("pass_recall", rc, step=run)
+
         run_metrics.append([acc, pr, rc, f1])
 
         if f1 > best_f1:
@@ -185,6 +192,9 @@ def test_and_evaluate(
     avg_metrics = np.mean(run_metrics, axis=0)
     std_metrics = np.std(run_metrics, axis=0)
 
+    # Log standard deviation to track model robustness
+    mlflow.log_metric("std_f1_macro", std_metrics[3])
+
     logging.info(f"Final Results for {model_type}")
     logging.info(f"Avg Accuracy (AC):  {avg_metrics[0]:.4f} ± {std_metrics[0]:.4f}")
     logging.info(f"Avg Precision (PR): {avg_metrics[1]:.4f} ± {std_metrics[1]:.4f}")
@@ -200,16 +210,29 @@ def test_and_evaluate(
     # )
     # df.to_csv(results_file, index_label="Run")
     # logging.info(f"Saved detailed run metrics to {results_file}")
+
+    results_path = (
+        Path(__file__).parent.parent / "experiments" / model_version / model_type
+    )
+    # Log the Confusion Matrix plot
+    fig = plot_confusion_matrix(
+        all_labels, best_preds, class_names, model_type, model_version
+    )
+    fig.savefig(
+        results_path / f"{model_type}_confusion_matrix.png",
+        dpi=100,
+        bbox_inches="tight",
+    )
+    mlflow.log_artifact(str(results_path / f"{model_type}_confusion_matrix.png"))
+
+    # Log the metrics CSV
     run_metrics_array = np.array(run_metrics)
     save_metrics(run_metrics_array, model_type, model_version)
+    metrics_csv = results_path / f"{model_type}_metrics.csv"
+    if metrics_csv.exists():
+        mlflow.log_artifact(str(metrics_csv))
 
-    plot_confusion_matrix(
-        all_labels,
-        best_preds,
-        class_names,
-        model_type=model_type,
-        model_version=model_version,
-    )
+    return avg_metrics
 
 
 if __name__ == "__main__":

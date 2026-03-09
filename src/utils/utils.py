@@ -118,10 +118,12 @@ def plot_convergence(history, model_type, save_path: Path = None):
         history (dict): Dictionary containing 'train_loss', 'val_loss', and 'val_f1' lists.
         model_type (str): Type of the model for labeling the plots.
         save_path (Path, optional): Path to save the figure. If None, saves to default location.
+    Returns:
+        fig: Matplotlib figure object.
     """
     epochs = range(1, len(history["train_loss"]) + 1)
 
-    plt.figure(figsize=(12, 5))
+    fig = plt.figure(figsize=(12, 5))
 
     # Loss Plot
     plt.subplot(1, 2, 1)
@@ -149,12 +151,13 @@ def plot_convergence(history, model_type, save_path: Path = None):
         save_path = Path(__file__).parent.parent.parent / "results" / "figures"
     plt.savefig(save_path / f"{model_type}_convergence.png")
     plt.close()
+    return fig
 
 
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type, model_version):
     target_labels = np.arange(len(class_names))
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
-    plt.figure(figsize=(10, 8))
+    fig = plt.figure(figsize=(10, 8))
     sns.heatmap(
         cm,
         annot=True,
@@ -174,7 +177,8 @@ def plot_confusion_matrix(y_true, y_pred, class_names, model_type, model_version
     )
     figure_path.mkdir(parents=True, exist_ok=True)
     plt.savefig(figure_path / f"{model_type}_confusion_matrix.png")
-    plt.show()
+    plt.close()
+    return fig
 
 
 def set_seed(seed=42):

@@ -1,6 +1,8 @@
+import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import mlflow
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -62,7 +64,7 @@ def debug_misclassifications(
     Specifically targets Gmail/BitTorrent and Gmail/Skype conflicts.
     """
 
-    NPZ_PATH = config["paths"]["output_data_file"]
+    NPZ_PATH = config["paths"]["mini_output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
@@ -85,11 +87,18 @@ def debug_misclassifications(
     save_path.mkdir(parents=True, exist_ok=True)
 
     class_names = test_loader.dataset.dataset.class_names
-    count = 0
+    # count = 0
+    all_figs = []
 
-    for batch in test_loader:
-        if count > 10:
-            break  # Limit samples for debugging
+    max_search_batches = 50
+    max_figs_to_collect = 10
+
+    logging.info(f"Starting misclassification search for: {target_conflicts}")
+
+    # 3. Search Loop
+    for batch_idx, batch in enumerate(test_loader):
+        if len(all_figs) >= max_figs_to_collect or batch_idx > max_search_batches:
+            break
 
         images = batch["image"].to(device)
         ids = batch["input_ids"].to(device)
@@ -97,48 +106,61 @@ def debug_misclassifications(
         labels = batch["label"].to(device)
         stats = batch["stats"].to(device)
 
-        if args.model_version == "optimized":
-            if args.use_stats:
-                logits, _ = model(images, ids, mask, stats)
+        # Forward pass without gradient tracking
+        with torch.no_grad():
+            if args.model_version == "optimized":
+                if args.use_stats:
+                    logits, _ = model(images, ids, mask, stats)
+                else:
+                    logits, _ = model(images, ids, mask)
             else:
                 logits, _ = model(images, ids, mask)
-        else:
-            logits, _ = model(images, ids, mask)
 
         preds = torch.argmax(logits, dim=1)
 
+        # Check each sample in the batch
         for i in range(len(labels)):
-            true_label, pred_label = (
-                class_names[labels[i].item()],
-                class_names[preds[i].item()],
-            )
+            true_label = class_names[labels[i].item()]
+            pred_label = class_names[preds[i].item()]
 
-            # Target the specific conflicts identified
-            # is_conflict = (
-            #     class_names[true_idx] == "BitTorrent" and class_names[pred_idx] == "Gmail"
-            # ) or (class_names[true_idx] == "Gmail" and class_names[pred_idx] == "Skype")
-
-            # if is_conflict:
-            #     heatmap = cam.generate_heatmap(
-            #         images[i : i + 1], ids[i : i + 1], mask[i : i + 1], pred_idx
-            #     )
-
-            # Dynamic Conflict Filter
+            # Dynamic Conflict Filter: Only process if it's a conflict we care about
             if (true_label, pred_label) in target_conflicts:
+                logging.info(
+                    f"Targeted conflict found: {true_label} predicted as {pred_label}"
+                )
+
+                # Generate Heatmap (Grad-CAM handles its own internal gradients)
                 heatmap = cam.generate_heatmap(
                     images[i : i + 1], ids[i : i + 1], mask[i : i + 1], preds[i].item()
                 )
 
-                # Plot Original vs Heatmap
-                fig, ax = plt.subplots(1, 2)
+                # 4. Plotting
+                fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+
+                # Original Traffic Image
                 ax[0].imshow(images[i].cpu().squeeze(), cmap="gray")
                 ax[0].set_title(f"True: {true_label}")
+                ax[0].axis("off")
 
+                # Grad-CAM Heatmap
                 ax[1].imshow(heatmap, cmap="jet")
                 ax[1].set_title(f"Pred: {pred_label} (Heatmap)")
+                ax[1].axis("off")
 
-                plt.savefig(
-                    save_path / f"debug_{count}_{true_label}_to_{pred_label}.png"
-                )
-                plt.close()
-                count += 1
+                # Save locally for safety
+                file_name = f"debug_{len(all_figs)}_{true_label}_to_{pred_label}.png"
+                img_path = save_path / file_name
+                plt.savefig(img_path, bbox_inches="tight")
+
+                # Add to return list
+                all_figs.append(fig)
+
+                if len(all_figs) >= max_figs_to_collect:
+                    break
+
+    if not all_figs:
+        logging.warning(
+            "Search complete: No targeted conflicts found in the provided batches."
+        )
+
+    return all_figs

@@ -161,9 +161,9 @@ class TrafficCLIP(nn.Module):
         with torch.no_grad():
             self.logit_scale.clamp_(0, np.log(100))
 
+        t = self.logit_scale.exp()
         # Cross-modality Representation Fusion via Cosine Similarity
         # logits = np.dot(V_e, T_e.T) * np.exp(t)
-        t = self.logit_scale.exp()
         logits = t * torch.matmul(v_e, t_e.t())
 
         return logits, t
