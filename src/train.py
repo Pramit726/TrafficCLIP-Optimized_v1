@@ -51,6 +51,20 @@ def validate(
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
+    class_names = val_loader.dataset.dataset.class_names
+
+    class_prompts = [
+        f"A network traffic gray photo of class {name}." for name in class_names
+    ]
+    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+    class_tokens = tokenizer(
+        class_prompts,
+        padding=True,
+        truncation=True,
+        return_tensors="pt",
+        max_length=config["preprocess"]["max_length"],
+    ).to(device)
+
     # val_loader = get_dataloader(
     #     npz_path=NPZ_PATH,
     #     tokenizer=TOKENIZER_NAME,
@@ -58,9 +72,6 @@ def validate(
     #     max_length=MAX_LENGTH,
     #     use_dynamic_prompts=use_dynamic_prompts,
     # )
-
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-    class_names = val_loader.dataset.dataset.class_names
 
     # PRE-ENCODE static bank for Original variant
     if not args.use_stats_prompts:
@@ -78,7 +89,9 @@ def validate(
 
             # LOSS CALCULATION
             if model_version == "original":
-                logits_gt, current_scale = model(images, input_ids, attention_mask)
+                logits_gt, current_scale = model(
+                    images, class_tokens.input_ids, class_tokens.attention_mask
+                )
             else:
                 logits_gt, current_scale = model(
                     images, input_ids, attention_mask, stats
@@ -388,7 +401,14 @@ def train(
         f"A network traffic gray photo of class {name}."
         for name in val_loader.dataset.dataset.class_names
     ]
+    # logging.info(
+    #     "Master Class List: %d classes", len(train_loader.dataset.dataset.class_names)
+    # )
 
+    # logging.info("Number of classes: %d", len(val_loader.dataset.dataset.class_names))
+    # actual_labels = train_loader.dataset.dataset.labels
+    # num_classes = max(actual_labels) + 1
+    # logging.info("Max label index: %d", num_classes - 1)
     class_tokens = tokenizer(
         class_prompts,
         padding=True,
