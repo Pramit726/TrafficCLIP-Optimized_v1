@@ -332,7 +332,11 @@ if __name__ == "__main__":
         try:
             traffic_cfg = config["dataset"]["traffic"]["classes"]
             num_classes = sum(len(c) for c in traffic_cfg.values())
-            exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+            exp_tag = (
+                f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
+            )
+            if args.use_stats:
+                exp_tag += f"_stats_data{args.use_stats}"
 
             # STEP A: Setup Original FP32 Model
             orig_model = OptimizedTrafficCLIP(
