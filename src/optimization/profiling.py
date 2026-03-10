@@ -307,7 +307,9 @@ if __name__ == "__main__":
 
     # Initialize DagsHub/MLflow
     dagshub.init(
-        repo_owner=config["user"]["name"], repo_name=config["user"]["repo"], mlflow=True
+        repo_owner=config["user"]["name"],
+        repo_name=config["user"]["ht_repo"],
+        mlflow=True,
     )
 
     logger = logging.getLogger("TrafficCLIP")  # Named logger

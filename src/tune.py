@@ -67,8 +67,12 @@ if __name__ == "__main__":
         default="optimized",
     )
     # parser.add_argument("--lambda_cl", type=float, default=1.0)
-    parser.add_argument("--use_stats", action="store_true", default=True)
-    parser.add_argument("--stats_input_dim", type=int, default=3)
+    parser.add_argument(
+        "--use_stats", action="store_true", help="Toggle use of statistical features"
+    )
+    parser.add_argument(
+        "--stats_input_dim", type=int, default=3, help="Number of statistical features"
+    )
     parser.add_argument(
         "--use_stats_prompts",
         action="store_true",
