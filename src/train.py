@@ -349,12 +349,17 @@ def train(
     early_stopping=None,
     optimizer=None,
     scheduler=None,
+    is_tune=False,
+    is_final=False,
 ):
     """
     Optimized Tri-modal Training Loop
     """
 
-    epochs = config["train"][model_version]["epochs"]
+    if is_tune and not is_final:
+        epochs = config["train"]["tuning_epochs"]
+    else:
+        epochs = config["train"][model_version]["epochs"]
     warmup_epochs = 5
     lr = args.lr if hasattr(args, "lr") else 1e-4
 

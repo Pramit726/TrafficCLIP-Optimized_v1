@@ -114,6 +114,8 @@ def run_experiment(args, config, device, is_final=False, is_tune=False):
             early_stopping=early_stopping,
             optimizer=None,
             scheduler=None,
+            is_tune=is_tune,
+            is_final=is_final,
         )
 
         # else:
