@@ -51,7 +51,7 @@ preprocess:
   
 train:
   seed : 42
-  tuning_epochs : 10
+  tuning_epochs : 8
   original:
     batch_size: 64
     epochs: 100 # 100

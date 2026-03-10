@@ -133,13 +133,27 @@ if __name__ == "__main__":
     logging.info("Starting Final Retraining on Train + Val combined set...")
 
     final_args = copy.deepcopy(args)
-    final_args.lr = best_lr
+    final_config = copy.deepcopy(config)
+
+    final_args.lr = study.best_params["lr"]
+    final_args.lambda_cl = study.best_params["lambda_cl"]
+    final_args.weight_decay = study.best_params["weight_decay"]
+
+    final_config["train"]["optimizer_type"] = study.best_params["optimizer"]
+    final_config["preprocess"]["batch_size"] = study.best_params["batch_size"]
+
+    logging.info(
+        f"Final Params: LR={final_args.lr:.2e}, "
+        f"Lambda={final_args.lambda_cl:.2f}, "
+        f"BS={study.best_params['batch_size']}, "
+        f"Opt={study.best_params['optimizer']}"
+    )
 
     with mlflow.start_run(run_name=f"Final_Retrain_{args.model_version}"):
-        mlflow.log_params(vars(final_args))
+        mlflow.log_params(study.best_params)
         mlflow.set_tag("phase", "production_retrain")
         final_f1 = run_experiment(
-            final_args, config, device, is_final=True, is_tune=True
+            final_args, final_config, device, is_final=True, is_tune=True
         )
 
         mlflow.log_metric("final_f1_score", final_f1)
