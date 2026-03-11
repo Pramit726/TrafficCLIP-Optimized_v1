@@ -39,7 +39,7 @@ def run_test_experiment(args):
     # )
     model_path = Path(exp_tag)
     # model_uri = f"models:/{model_path}/latest"
-    model_uri = f"models:/best_ht/latest"
+    model_uri = f"models:/best_bs/latest"
     logging.info(f"Attempting to load model from {model_uri}")
 
     # if not model_path.exists():
@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     config = load_config()
     USER_NAME = config["user"]["name"]
-    REPO_NAME = config["user"]["ht_repo"]
+    REPO_NAME = config["user"]["repo"]
     dagshub.init(
         repo_owner=USER_NAME,
         repo_name=REPO_NAME,

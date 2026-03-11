@@ -17,8 +17,8 @@ dependencies:
   # Deep Learning
   - pytorch=2.8.*
   - torchvision=0.15.*
-  - transformers>=4.40.0
-  - huggingface_hub>=0.23.0
+  - transformers=5.3.0
+  - huggingface_hub=1.6.0 
 
   # Metrics
   - scikit-learn=1.7.2

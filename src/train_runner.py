@@ -94,10 +94,26 @@ def run_experiment(args, config, device, is_final=False, is_tune=False):
                 [train_loader.dataset, val_loader.dataset]
             )
 
+            # Create new split for early stopping
+            total_size = len(combined_dataset)
+            val_size = int(0.1 * total_size)  # 10% for validation
+            train_size = total_size - val_size
+
+            new_train_dataset, new_val_dataset = torch.utils.data.random_split(
+                combined_dataset, [train_size, val_size]
+            )
+
             train_loader = torch.utils.data.DataLoader(
-                combined_dataset,
+                new_train_dataset,
                 batch_size=config["preprocess"]["batch_size"],
                 shuffle=True,
+                num_workers=4,
+            )
+
+            val_loader = torch.utils.data.DataLoader(
+                new_val_dataset,
+                batch_size=config["preprocess"]["batch_size"],
+                shuffle=False,
                 num_workers=4,
             )
 
