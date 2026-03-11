@@ -38,7 +38,8 @@ def run_test_experiment(args):
     #     / Path(exp_tag)
     # )
     model_path = Path(exp_tag)
-    model_uri = f"models:/{model_path}/latest"
+    # model_uri = f"models:/{model_path}/latest"
+    model_uri = f"models:/best_ht/latest"
     logging.info(f"Attempting to load model from {model_uri}")
 
     # if not model_path.exists():
@@ -47,7 +48,7 @@ def run_test_experiment(args):
 
     try:
         # This loads the entire model object (architecture + weights)
-        model = mlflow.pytorch.load_model(model_uri).to(device)
+        model = mlflow.pytorch.load_model(model_uri, map_location=device).to(device)
         logging.info(f"Successfully loaded model from {model_uri}")
     except Exception as e:
         logging.error(f"Failed to load model from registry: {e}")

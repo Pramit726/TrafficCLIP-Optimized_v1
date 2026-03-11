@@ -29,8 +29,10 @@ def run_gradcam_diagnostic(args, config, target_conflicts):
     #     / Path(exp_tag)
     # )
     model_path = Path(exp_tag)
-    model_uri = f"models:/{model_path}/latest"
+    # model_uri = f"models:/{model_path}/latest"
+    model_uri = f"models:/best_ht/latest"
     logging.info(f"Attempting to load model from {model_uri}")
+
     # model_path = model_path / "best_model.pt"
     exp_dir = model_path.parent / Path("gradcam_debug")
 
@@ -60,7 +62,7 @@ def run_gradcam_diagnostic(args, config, target_conflicts):
     #     return
     try:
         # This loads the entire model object (architecture + weights)
-        model = mlflow.pytorch.load_model(model_uri).to(device)
+        model = mlflow.pytorch.load_model(model_uri, map_location=device).to(device)
         logging.info(f"Successfully loaded model from {model_uri}")
     except Exception as e:
         logging.error(f"Failed to load model from registry: {e}")
