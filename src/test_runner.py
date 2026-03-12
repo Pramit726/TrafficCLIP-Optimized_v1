@@ -30,7 +30,7 @@ def run_test_experiment(args):
     # else:
     #     exp_tag += "_statsFalse"
 
-    mlflow.set_experiment("TrafficCLIP_Test_Evaluation")
+    mlflow.set_experiment("TrafficCLIP_Test_Evaluation_1")
     # results_path = (
     #     Path(__file__).parent.parent
     #     / Path("experiments")
@@ -39,7 +39,7 @@ def run_test_experiment(args):
     # )
     model_path = Path(exp_tag)
     # model_uri = f"models:/{model_path}/latest"
-    model_uri = f"models:/best_bs/latest"
+    model_uri = f"models:/best_ht/latest"
     logging.info(f"Attempting to load model from {model_uri}")
 
     # if not model_path.exists():

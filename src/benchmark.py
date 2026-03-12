@@ -214,6 +214,7 @@ def test_and_evaluate(
     results_path = (
         Path(__file__).parent.parent / "experiments" / model_version / model_type
     )
+    results_path.mkdir(parents=True, exist_ok=True)
     # Log the Confusion Matrix plot
     fig = plot_confusion_matrix(
         all_labels, best_preds, class_names, model_type, model_version
