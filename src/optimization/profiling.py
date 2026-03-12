@@ -347,7 +347,7 @@ if __name__ == "__main__":
                 stats_input_dim=args.stats_input_dim,
             ).to("cpu")
 
-            model_uri = f"models:/{exp_tag}/latest"
+            model_uri = f"models:/best_ht/latest"
             logging.info(f"Downloading FP32 weights from {model_uri}")
             local_dir = mlflow.artifacts.download_artifacts(model_uri)
 
