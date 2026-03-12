@@ -120,7 +120,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     config = load_config()
     USER_NAME = config["user"]["name"]
-    REPO_NAME = config["user"]["repo"]
+    REPO_NAME = config["user"]["ht_repo"]
     dagshub.init(
         repo_owner=USER_NAME,
         repo_name=REPO_NAME,
