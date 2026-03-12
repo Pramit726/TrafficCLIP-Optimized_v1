@@ -52,7 +52,7 @@ def validate(
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
-    class_names = val_loader.dataset.dataset.class_names
+    # class_names = val_loader.dataset.dataset.class_names
 
     class_names_list = (
         class_names
