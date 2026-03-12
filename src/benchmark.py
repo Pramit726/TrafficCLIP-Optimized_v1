@@ -22,6 +22,221 @@ from src.utils.utils import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 
 
+# def test_and_evaluate(
+#     model,
+#     device,
+#     model_type,
+#     args,
+#     model_version,
+#     config,
+#     num_runs=3,
+#     seed=42,
+# ):
+#     """
+#     Standardized Testing:
+#     1. Regenerates a stratified test_loader for each pass using different seeds.
+#     2. Averages AC, PR, RC, and Macro F1 across all runs.
+#     3. Identifies the highest F1 run for the Confusion Matrix.
+#     """
+#     model.eval()
+#     run_metrics = []
+#     best_f1 = -1.0
+#     best_preds = None
+#     all_labels = None
+
+#     NPZ_PATH = config["paths"]["output_data_file"]
+#     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
+#     MAX_LENGTH = config["test"]["max_length"]
+#     BATCH_SIZE = config["test"]["batch_size"]
+
+#     logging.info(f"Starting evaluation for {model_type} ({num_runs} passes)")
+
+#     for run in range(num_runs):
+#         # Generate a unique seed for this specific run
+#         current_seed = seed + run
+#         set_seed(current_seed)
+#         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+
+#         # Recreate dataloader with the new seed to get a different stratified test split
+#         _, _, test_loader = get_dataloader(
+#             npz_path=NPZ_PATH,
+#             tokenizer=TOKENIZER_NAME,
+#             # prompts=ORIGINAL_PROMPTS,
+#             batch_size=BATCH_SIZE,
+#             max_length=MAX_LENGTH,
+#             seed=current_seed,
+#             use_dynamic_prompts=args.use_stats_prompts,  # Phase 2 Toggle
+#         )
+
+#         class_names = test_loader.dataset.dataset.class_names
+
+#         preds_list = []
+#         labels_list = []
+
+#         # PRE-ENCODE static bank for Original variant
+#         if not args.use_stats_prompts:
+#             static_descriptor_bank = get_original_descriptor_bank(
+#                 model, tokenizer, class_names, MAX_LENGTH, device
+#             )
+
+#         with torch.no_grad():
+#             for batch in test_loader:
+#                 images = batch["image"].to(device)
+#                 input_ids = batch["input_ids"].to(device)
+#                 attention_mask = batch["attention_mask"].to(device)
+#                 labels = batch["label"].to(device)
+#                 stats = batch["stats"].to(device)
+
+#                 # Variant 1: Original Prompts (Global Static Matching)
+#                 if not args.use_stats_prompts:
+#                     # Vision features normalized for similarity
+#                     v_e = model.get_vision_features(images)
+#                     # Match against all K classes in the static bank
+#                     logits = (
+#                         torch.matmul(v_e, static_descriptor_bank.T)
+#                         * model.logit_scale.exp()
+#                     )
+#                     preds = torch.argmax(logits, dim=1)
+
+#                 # Variant 2: Statistical Prompts (Global Dynamic Matching)
+#                 else:
+
+#                     v_e = model.get_vision_features(images)
+#                     s_e = None
+#                     if args.use_stats:
+#                         s_e = model.stats_proj(stats)  # [Batch, 512]
+#                         s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
+
+#                     batch_preds = []
+
+#                     # Must iterate because descriptions depend on specific sample statistics
+#                     for i in range(len(images)):
+#                         if not args.use_stats_prompts:
+#                             # Use the pre-encoded bank you made at the start of the 'run'
+#                             t_e_all = static_descriptor_bank  # [K, 1024]
+#                         else:
+#                             m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
+
+#                             # Generate K descriptions for THIS specific image's behavior
+#                             sample_prompts = [
+#                                 f"A network traffic gray photo of class {name} with "
+#                                 f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+#                                 f"and {m_entropy:.2f} byte entropy."
+#                                 for name in class_names
+#                             ]
+
+#                             encoded = tokenizer(
+#                                 sample_prompts,
+#                                 padding="max_length",
+#                                 truncation=True,
+#                                 return_tensors="pt",
+#                                 max_length=MAX_LENGTH,
+#                             ).to(device)
+#                         t_e_all = model.get_text_features(
+#                             encoded["input_ids"], encoded["attention_mask"]
+#                         )  # [K, 1024]
+
+#                         # Expand current image and stats to match K class hypotheses
+#                         num_classes = len(class_names)
+#                         v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
+
+#                         if s_e is not None:
+#                             s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)  # [K, 512]
+#                             combined = torch.cat(
+#                                 (v_e_hyp, t_e_all, s_e_hyp), dim=1
+#                             )  # [K, 2560]
+#                         else:
+#                             combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
+
+#                         # Pass all K hypotheses through the MLP at once
+#                         logits = model.fusion_head(
+#                             combined
+#                         )  # [K_hypotheses, K_classes]
+
+#                         confidences = torch.diag(logits)
+#                         # The predicted class is the one with the highest confidence (diagonal element)
+#                         batch_preds.append(torch.argmax(confidences).item())
+
+#                     preds = torch.tensor(batch_preds).to(device)
+
+#             preds_list.extend(preds.cpu().numpy())
+#             labels_list.extend(labels.cpu().numpy())
+
+#         # Calculate metrics with zero_division safety
+#         acc = accuracy_score(labels_list, preds_list)
+#         pr = precision_score(
+#             labels_list, preds_list, average="macro", zero_division=0.0
+#         )
+#         rc = recall_score(labels_list, preds_list, average="macro", zero_division=0.0)
+#         f1 = f1_score(labels_list, preds_list, average="macro", zero_division=0.0)
+
+#         # --- MLflow Pass Logging ---
+#         mlflow.log_metric("pass_accuracy", acc, step=run)
+#         mlflow.log_metric("pass_f1_macro", f1, step=run)
+#         mlflow.log_metric("pass_precision", pr, step=run)
+#         mlflow.log_metric("pass_recall", rc, step=run)
+
+#         run_metrics.append([acc, pr, rc, f1])
+
+#         if f1 > best_f1:
+#             best_f1 = f1
+#             best_preds = preds_list
+#             all_labels = labels_list
+#             # class_names = test_loader.dataset.dataset.class_names
+
+#         logging.info(
+#             f"Pass {run+1} (Seed {current_seed}): Accuracy={acc:.4f}, Macro F1={f1:.4f}"
+#         )
+
+#     # Average the metrics for the final report
+#     avg_metrics = np.mean(run_metrics, axis=0)
+#     std_metrics = np.std(run_metrics, axis=0)
+
+#     # Log standard deviation to track model robustness
+#     mlflow.log_metric("std_f1_macro", std_metrics[3])
+
+#     logging.info(f"Final Results for {model_type}")
+#     logging.info(f"Avg Accuracy (AC):  {avg_metrics[0]:.4f} ± {std_metrics[0]:.4f}")
+#     logging.info(f"Avg Precision (PR): {avg_metrics[1]:.4f} ± {std_metrics[1]:.4f}")
+#     logging.info(f"Avg Recall (RC):    {avg_metrics[2]:.4f} ± {std_metrics[2]:.4f}")
+#     logging.info(f"Avg Macro F1 Score: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
+
+#     # save run metrics to pandas dataframe
+#     # results_path = Path(__file__).parent.parent / "results" / "metrics" / model_version
+#     # results_path.mkdir(parents=True, exist_ok=True)
+#     # results_file = results_path / f"{model_type}_test_results.csv"
+#     # df = pd.DataFrame(
+#     #     run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
+#     # )
+#     # df.to_csv(results_file, index_label="Run")
+#     # logging.info(f"Saved detailed run metrics to {results_file}")
+
+#     results_path = (
+#         Path(__file__).parent.parent / "experiments" / model_version / model_type
+#     )
+#     results_path.mkdir(parents=True, exist_ok=True)
+#     # Log the Confusion Matrix plot
+#     fig = plot_confusion_matrix(
+#         all_labels, best_preds, class_names, model_type, model_version
+#     )
+#     fig.savefig(
+#         results_path / f"{model_type}_confusion_matrix.png",
+#         dpi=100,
+#         bbox_inches="tight",
+#     )
+#     mlflow.log_artifact(str(results_path / f"{model_type}_confusion_matrix.png"))
+
+#     # Log the metrics CSV
+#     run_metrics_array = np.array(run_metrics)
+#     save_metrics(run_metrics_array, model_type, model_version)
+#     metrics_csv = results_path / f"{model_type}_metrics.csv"
+#     if metrics_csv.exists():
+#         mlflow.log_artifact(str(metrics_csv))
+
+#     return avg_metrics
+import copy
+
+
 def test_and_evaluate(
     model,
     device,
@@ -34,9 +249,9 @@ def test_and_evaluate(
 ):
     """
     Standardized Testing:
-    1. Regenerates a stratified test_loader for each pass using different seeds.
-    2. Averages AC, PR, RC, and Macro F1 across all runs.
-    3. Identifies the highest F1 run for the Confusion Matrix.
+    1. Synchronizes a Master Class List to fix sparse Confusion Matrices.
+    2. Regenerates a stratified test_loader for each pass using different seeds.
+    3. Averages Metrics and identifies the best run for visualization.
     """
     model.eval()
     run_metrics = []
@@ -44,39 +259,47 @@ def test_and_evaluate(
     best_preds = None
     all_labels = None
 
+    # --- STEP 1: Capture Master Class List ---
+    # We do this once to ensure the Confusion Matrix always has the correct dimensions
     NPZ_PATH = config["paths"]["output_data_file"]
     TOKENIZER_NAME = config["preprocess"]["tokenizer"]
     MAX_LENGTH = config["test"]["max_length"]
     BATCH_SIZE = config["test"]["batch_size"]
 
-    logging.info(f"Starting evaluation for {model_type} ({num_runs} passes)")
+    # Temporary loader just to get the global taxonomy
+    _, _, master_loader = get_dataloader(
+        npz_path=NPZ_PATH,
+        tokenizer=TOKENIZER_NAME,
+        batch_size=BATCH_SIZE,
+        max_length=MAX_LENGTH,
+    )
+    master_class_names = master_loader.dataset.dataset.class_names
+    logging.info(
+        f"Evaluation started for {model_type}. Global Taxonomy: {len(master_class_names)} classes."
+    )
 
     for run in range(num_runs):
-        # Generate a unique seed for this specific run
         current_seed = seed + run
         set_seed(current_seed)
         tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-        # Recreate dataloader with the new seed to get a different stratified test split
+        # Recreate dataloader with the new seed for true cross-validation
         _, _, test_loader = get_dataloader(
             npz_path=NPZ_PATH,
             tokenizer=TOKENIZER_NAME,
-            # prompts=ORIGINAL_PROMPTS,
             batch_size=BATCH_SIZE,
             max_length=MAX_LENGTH,
             seed=current_seed,
-            use_dynamic_prompts=args.use_stats_prompts,  # Phase 2 Toggle
+            use_dynamic_prompts=args.use_stats_prompts,
         )
-
-        class_names = test_loader.dataset.dataset.class_names
 
         preds_list = []
         labels_list = []
 
-        # PRE-ENCODE static bank for Original variant
+        # PRE-ENCODE static bank for Original variant if needed
         if not args.use_stats_prompts:
             static_descriptor_bank = get_original_descriptor_bank(
-                model, tokenizer, class_names, MAX_LENGTH, device
+                model, tokenizer, master_class_names, MAX_LENGTH, device
             )
 
         with torch.no_grad():
@@ -87,82 +310,62 @@ def test_and_evaluate(
                 labels = batch["label"].to(device)
                 stats = batch["stats"].to(device)
 
-                # Variant 1: Original Prompts (Global Static Matching)
+                # --- Inference Logic ---
                 if not args.use_stats_prompts:
-                    # Vision features normalized for similarity
                     v_e = model.get_vision_features(images)
-                    # Match against all K classes in the static bank
                     logits = (
                         torch.matmul(v_e, static_descriptor_bank.T)
                         * model.logit_scale.exp()
                     )
                     preds = torch.argmax(logits, dim=1)
-
-                # Variant 2: Statistical Prompts (Global Dynamic Matching)
                 else:
-
                     v_e = model.get_vision_features(images)
                     s_e = None
                     if args.use_stats:
-                        s_e = model.stats_proj(stats)  # [Batch, 512]
-                        s_e = torch.nn.functional.normalize(s_e, p=2, dim=-1)
+                        s_e = torch.nn.functional.normalize(
+                            model.stats_proj(stats), p=2, dim=-1
+                        )
 
                     batch_preds = []
-
-                    # Must iterate because descriptions depend on specific sample statistics
                     for i in range(len(images)):
-                        if not args.use_stats_prompts:
-                            # Use the pre-encoded bank you made at the start of the 'run'
-                            t_e_all = static_descriptor_bank  # [K, 1024]
-                        else:
-                            m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
+                        m_iat, m_jitter, m_entropy = stats[i].cpu().numpy()
+                        sample_prompts = [
+                            f"A network traffic gray photo of class {name} with "
+                            f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
+                            f"and {m_entropy:.2f} byte entropy."
+                            for name in master_class_names
+                        ]
 
-                            # Generate K descriptions for THIS specific image's behavior
-                            sample_prompts = [
-                                f"A network traffic gray photo of class {name} with "
-                                f"{m_iat:.2f}ms mean IAT, {m_jitter:.2f}ms jitter, "
-                                f"and {m_entropy:.2f} byte entropy."
-                                for name in class_names
-                            ]
+                        encoded = tokenizer(
+                            sample_prompts,
+                            padding="max_length",
+                            truncation=True,
+                            return_tensors="pt",
+                            max_length=MAX_LENGTH,
+                        ).to(device)
 
-                            encoded = tokenizer(
-                                sample_prompts,
-                                padding="max_length",
-                                truncation=True,
-                                return_tensors="pt",
-                                max_length=MAX_LENGTH,
-                            ).to(device)
                         t_e_all = model.get_text_features(
                             encoded["input_ids"], encoded["attention_mask"]
-                        )  # [K, 1024]
-
-                        # Expand current image and stats to match K class hypotheses
-                        num_classes = len(class_names)
-                        v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)  # [K, 1024]
+                        )
+                        num_classes = len(master_class_names)
+                        v_e_hyp = v_e[i : i + 1].expand(num_classes, -1)
 
                         if s_e is not None:
-                            s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)  # [K, 512]
-                            combined = torch.cat(
-                                (v_e_hyp, t_e_all, s_e_hyp), dim=1
-                            )  # [K, 2560]
+                            s_e_hyp = s_e[i : i + 1].expand(num_classes, -1)
+                            combined = torch.cat((v_e_hyp, t_e_all, s_e_hyp), dim=1)
                         else:
-                            combined = torch.cat((v_e_hyp, t_e_all), dim=1)  # [K, 2048]
+                            combined = torch.cat((v_e_hyp, t_e_all), dim=1)
 
-                        # Pass all K hypotheses through the MLP at once
-                        logits = model.fusion_head(
-                            combined
-                        )  # [K_hypotheses, K_classes]
-
-                        confidences = torch.diag(logits)
-                        # The predicted class is the one with the highest confidence (diagonal element)
+                        logits_hyp = model.fusion_head(combined)
+                        confidences = torch.diag(logits_hyp)
                         batch_preds.append(torch.argmax(confidences).item())
 
                     preds = torch.tensor(batch_preds).to(device)
 
-            preds_list.extend(preds.cpu().numpy())
-            labels_list.extend(labels.cpu().numpy())
+                preds_list.extend(preds.cpu().numpy())
+                labels_list.extend(labels.cpu().numpy())
 
-        # Calculate metrics with zero_division safety
+        # Metrics Calculation
         acc = accuracy_score(labels_list, preds_list)
         pr = precision_score(
             labels_list, preds_list, average="macro", zero_division=0.0
@@ -170,68 +373,42 @@ def test_and_evaluate(
         rc = recall_score(labels_list, preds_list, average="macro", zero_division=0.0)
         f1 = f1_score(labels_list, preds_list, average="macro", zero_division=0.0)
 
-        # --- MLflow Pass Logging ---
-        mlflow.log_metric("pass_accuracy", acc, step=run)
-        mlflow.log_metric("pass_f1_macro", f1, step=run)
-        mlflow.log_metric("pass_precision", pr, step=run)
-        mlflow.log_metric("pass_recall", rc, step=run)
-
         run_metrics.append([acc, pr, rc, f1])
 
+        # Track best run for the Confusion Matrix visualization
         if f1 > best_f1:
             best_f1 = f1
-            best_preds = preds_list
-            all_labels = labels_list
-            # class_names = test_loader.dataset.dataset.class_names
+            best_preds = copy.deepcopy(preds_list)
+            all_labels = copy.deepcopy(labels_list)
 
-        logging.info(
-            f"Pass {run+1} (Seed {current_seed}): Accuracy={acc:.4f}, Macro F1={f1:.4f}"
-        )
+        logging.info(f"Pass {run+1} (Seed {current_seed}): F1={f1:.4f}")
 
-    # Average the metrics for the final report
+    # --- STEP 2: Aggregated Reporting ---
     avg_metrics = np.mean(run_metrics, axis=0)
     std_metrics = np.std(run_metrics, axis=0)
 
-    # Log standard deviation to track model robustness
-    mlflow.log_metric("std_f1_macro", std_metrics[3])
+    logging.info(f"\nFinal Results for {model_type}:")
+    logging.info(f"Avg Accuracy: {avg_metrics[0]:.4f} ± {std_metrics[0]:.4f}")
+    logging.info(f"Avg Macro F1: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
 
-    logging.info(f"Final Results for {model_type}")
-    logging.info(f"Avg Accuracy (AC):  {avg_metrics[0]:.4f} ± {std_metrics[0]:.4f}")
-    logging.info(f"Avg Precision (PR): {avg_metrics[1]:.4f} ± {std_metrics[1]:.4f}")
-    logging.info(f"Avg Recall (RC):    {avg_metrics[2]:.4f} ± {std_metrics[2]:.4f}")
-    logging.info(f"Avg Macro F1 Score: {avg_metrics[3]:.4f} ± {std_metrics[3]:.4f}")
-
-    # save run metrics to pandas dataframe
-    # results_path = Path(__file__).parent.parent / "results" / "metrics" / model_version
-    # results_path.mkdir(parents=True, exist_ok=True)
-    # results_file = results_path / f"{model_type}_test_results.csv"
-    # df = pd.DataFrame(
-    #     run_metrics, columns=["Accuracy", "Precision", "Recall", "Macro F1"]
-    # )
-    # df.to_csv(results_file, index_label="Run")
-    # logging.info(f"Saved detailed run metrics to {results_file}")
-
+    # --- STEP 3: Save Artifacts ---
     results_path = (
         Path(__file__).parent.parent / "experiments" / model_version / model_type
     )
     results_path.mkdir(parents=True, exist_ok=True)
-    # Log the Confusion Matrix plot
+
+    # Plot CM using the MASTER class list and the BEST run data
     fig = plot_confusion_matrix(
-        all_labels, best_preds, class_names, model_type, model_version
+        all_labels, best_preds, master_class_names, model_type, model_version
     )
     fig.savefig(
         results_path / f"{model_type}_confusion_matrix.png",
-        dpi=100,
+        dpi=300,
         bbox_inches="tight",
     )
-    mlflow.log_artifact(str(results_path / f"{model_type}_confusion_matrix.png"))
 
-    # Log the metrics CSV
-    run_metrics_array = np.array(run_metrics)
-    save_metrics(run_metrics_array, model_type, model_version)
-    metrics_csv = results_path / f"{model_type}_metrics.csv"
-    if metrics_csv.exists():
-        mlflow.log_artifact(str(metrics_csv))
+    mlflow.log_artifact(str(results_path / f"{model_type}_confusion_matrix.png"))
+    save_metrics(np.array(run_metrics), model_type, model_version)
 
     return avg_metrics
 

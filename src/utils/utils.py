@@ -154,30 +154,73 @@ def plot_convergence(history, model_type, save_path: Path = None):
     return fig
 
 
+# def plot_confusion_matrix(y_true, y_pred, class_names, model_type, model_version):
+#     target_labels = np.arange(len(class_names))
+#     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
+#     fig = plt.figure(figsize=(10, 8))
+#     sns.heatmap(
+#         cm,
+#         annot=True,
+#         fmt=".1f",  # Changed from 'd' to '.1f' to handle float values
+#         cmap="Blues",
+#         xticklabels=class_names,
+#         yticklabels=class_names,
+#     )
+#     plt.xlabel("Predicted Label")
+#     plt.ylabel("True Label")
+#     plt.title(f"Confusion Matrix: {model_type}")
+#     # save figure
+#     figure_path = (
+#         Path(__file__).parent.parent.parent / "results" / "figures" / model_version
+#     )
+#     figure_path.mkdir(parents=True, exist_ok=True)
+#     plt.savefig(figure_path / f"{model_type}_confusion_matrix.png")
+#     plt.close()
+#     return fig
 def plot_confusion_matrix(y_true, y_pred, class_names, model_type, model_version):
+    # Ensure inputs are numpy arrays for indexing
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
     target_labels = np.arange(len(class_names))
+
+    # 1. Calculate raw and normalized matrices
     cm = confusion_matrix(y_true, y_pred, labels=target_labels)
-    fig = plt.figure(figsize=(10, 8))
+    # Normalize by row (true labels) to get percentages
+    cm_norm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+    cm_norm = np.nan_to_num(cm_norm)  # Handle division by zero for empty classes
+
+    fig, ax = plt.subplots(figsize=(12, 10))
+
+    # 2. Use the normalized matrix for colors, but show raw counts as labels
     sns.heatmap(
-        cm,
-        annot=True,
-        fmt=".1f",  # Changed from 'd' to '.1f' to handle float values
+        cm_norm,
+        annot=cm,  # <--- This puts the raw counts (1, 2, etc.) inside the boxes
+        fmt="d",
         cmap="Blues",
         xticklabels=class_names,
         yticklabels=class_names,
+        ax=ax,
     )
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
+
+    plt.xlabel("Predicted Label", fontweight="bold")
+    plt.ylabel("True Label", fontweight="bold")
     plt.title(
-        f"Confusion Matrix: Performance on Similar Traffic Classes - {model_type}"
+        f"Confusion Matrix: {model_type} ({model_version})\nSamples: {len(y_true)}",
+        fontsize=14,
     )
-    # save figure
+    plt.xticks(rotation=45, ha="right")
+    plt.yticks(rotation=0)
+
+    # 3. Handle paths
     figure_path = (
         Path(__file__).parent.parent.parent / "results" / "figures" / model_version
     )
     figure_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(figure_path / f"{model_type}_confusion_matrix.png")
-    plt.close()
+
+    save_file = figure_path / f"{model_type}_confusion_matrix.png"
+    plt.savefig(save_file, dpi=300, bbox_inches="tight")
+    logging.info(f"Confusion Matrix saved to: {save_file}")
+
     return fig
 
 
