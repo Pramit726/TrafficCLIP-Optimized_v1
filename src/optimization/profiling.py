@@ -8,12 +8,13 @@ import cloudpickle
 import dagshub
 import mlflow
 import numpy as np
+import onnxruntime as ort
 import torch
 from sklearn.metrics import f1_score
 
 from src.models.opt_traffic_clip import OptimizedTrafficCLIP
 from src.optimization.calibration import create_calibration_dataloader
-from src.optimization.quant import quantize_traffic_model
+from src.optimization.quant import export_to_onnx
 from src.utils.utils import load_config
 
 # def profile_model(model, num_samples=100, warm_up=10):
@@ -170,109 +171,124 @@ def get_model_size_mb(model_object):
     return size_mb
 
 
-def evaluate_quantized_system(original_model, quantized_model, test_loader):
-    """
-    Enhanced evaluation merging accuracy testing with professional profiling.
-    Logs metrics directly to MLflow for side-by-side comparison.
-    """
+def evaluate_quantized_system(original_model, optimized_model, test_loader):
 
     def run_comprehensive_bench(model, loader, model_name):
-        model.eval()
-        model.to("cpu")
+        is_ort = isinstance(model, ort.InferenceSession)
 
-        all_preds = []
-        all_labels = []
-        latencies = []
+        if not is_ort:
+            model.eval()
+            model.to("cpu")
+        else:
+            onnx_inputs = [i.name for i in model.get_inputs()]
+            logger.info(f"{model_name} ONNX inputs: {onnx_inputs}")
 
-        # 1. Warm-up Phase (for realistic CPU metrics)
+        all_preds, all_labels, latencies = [], [], []
         warm_up_batches = 5
+
+        logger.info(f"Warming up {model_name}...")
+
         with torch.no_grad():
             for i, batch in enumerate(loader):
                 if i >= warm_up_batches:
                     break
-                img, stats, ids, mask = (
-                    batch["image"],
-                    batch["stats"],
-                    batch["input_ids"],
-                    batch["attention_mask"],
-                )
-                _ = model(img, ids, mask, stats)
 
-        # 2. Combined Accuracy & Latency Measurement
+                if is_ort:
+                    feeds = {k: batch[k].numpy() for k in onnx_inputs}
+
+                    _ = model.run(None, feeds)
+
+                else:
+                    _ = model(
+                        batch["image"],
+                        batch["input_ids"],
+                        batch["attention_mask"],
+                        batch["stats"],
+                    )
+
         logger.info(f"Benchmarking {model_name}...")
+
         with torch.no_grad():
             for batch in loader:
-                img = batch["image"]
-                stats = batch["stats"]
-                ids = batch["input_ids"]
-                mask = batch["attention_mask"]
                 labels = batch["label"]
 
-                start = time.perf_counter()
-                logits, _ = model(img, ids, mask, stats)
-                end = time.perf_counter()
+                if is_ort:
 
-                batch_latency = ((end - start) * 1000) / img.size(0)
-                latencies.append(batch_latency)
+                    feeds = {k: batch[k].numpy() for k in onnx_inputs}
 
-                preds = torch.argmax(logits, dim=1)
-                all_preds.extend(preds.numpy())
+                    start = time.perf_counter()
+                    outputs = model.run(None, feeds)
+                    end = time.perf_counter()
+
+                    logits = torch.from_numpy(outputs[0])
+
+                else:
+
+                    start = time.perf_counter()
+
+                    logits, _ = model(
+                        batch["image"],
+                        batch["input_ids"],
+                        batch["attention_mask"],
+                        batch["stats"],
+                    )
+
+                    end = time.perf_counter()
+
+                latencies.append(((end - start) * 1000) / batch["image"].size(0))
+
+                all_preds.extend(torch.argmax(logits, dim=1).numpy())
                 all_labels.extend(labels.numpy())
 
-        # 3. Calculate Metrics
         f1 = f1_score(all_labels, all_preds, average="macro")
         avg_lat = np.mean(latencies)
         p99_lat = np.percentile(latencies, 99)
-        throughput = 1000 / avg_lat  # Flows per second
+        tp = 1000 / avg_lat
 
-        return f1, avg_lat, p99_lat, throughput
+        return f1, avg_lat, p99_lat, tp
 
-    # Run benchmarks
+    # --- EXECUTION ---
     orig_f1, orig_lat, orig_p99, orig_tp = run_comprehensive_bench(
-        original_model, test_loader, "Float32"
-    )
-    quant_f1, quant_lat, quant_p99, quant_tp = run_comprehensive_bench(
-        quantized_model, test_loader, "Int8"
+        original_model, test_loader, "PyTorch_FP32"
     )
 
-    # 4. Model Size Calculation
+    opt_f1, opt_lat, opt_p99, opt_tp = run_comprehensive_bench(
+        optimized_model, test_loader, "ONNX_Optimized"
+    )
+
+    # --- LOGGING ---
     orig_size = get_model_size_mb(original_model)
-    quant_size = get_model_size_mb(quantized_model)
-    logging.info(f"Original Model Size: {orig_size:.2f} MB")
-    logging.info(f"Quantized Model Size: {quant_size:.2f} MB")
 
-    # --- MLFLOW logger ---
-    # Log metrics to MLflow
+    onnx_file = Path("traffic_clip_optimized.onnx")
+    opt_size = (
+        onnx_file.stat().st_size / (1024 * 1024) if onnx_file.exists() else orig_size
+    )
+
     mlflow.log_metrics(
         {
             "orig_f1": orig_f1,
-            "quant_f1": quant_f1,
-            "orig_latency_ms": orig_lat,
-            "quant_latency_ms": quant_lat,
+            "opt_f1": opt_f1,
+            "orig_lat_ms": orig_lat,
+            "opt_lat_ms": opt_lat,
             "orig_p99_ms": orig_p99,
-            "quant_p99_ms": quant_p99,
-            "orig_throughput_fps": orig_tp,
-            "quant_throughput_fps": quant_tp,
-            "compression_ratio": orig_size / quant_size,
-            "speedup_factor": orig_lat / quant_lat,
+            "opt_p99_ms": opt_p99,
+            "speedup": orig_lat / opt_lat,
         }
     )
 
-    # --- logger REPORT ---
-    logger.info("\n" + "=" * 50)
-    logger.info(f"{'Metric':<20} | {'Original (FP32)':<12} | {'Quantized (INT8)':<12}")
-    logger.info(f"{'-'*20}-|-{'-'*12}-|-{'-'*12}")
-    logger.info(f"{'Size (MB)':<20} | {orig_size:<12.2f} | {quant_size:<12.2f}")
-    logger.info(f"{'Macro F1':<20} | {orig_f1:<12.4f} | {quant_f1:<12.4f}")
-    logger.info(f"{'Avg Lat (ms)':<20} | {orig_lat:<12.2f} | {quant_lat:<12.2f}")
-    logger.info(f"{'P99 Lat (ms)':<20} | {orig_p99:<12.2f} | {quant_p99:<12.2f}")
-    logger.info(f"{'Throughput':<20} | {orig_tp:<12.1f} | {quant_tp:<12.1f}")
-    logger.info(f"{'='*50}")
+    logger.info("\n" + "=" * 60)
     logger.info(
-        f"Summary: {orig_lat/quant_lat:.1f}x Speedup | {orig_size/quant_size:.1f}x Compression"
+        f"{'Metric':<20} | {'Baseline (PyTorch)':<18} | {'Optimized (ONNX)':<18}"
     )
+    logger.info(f"{'-'*20}-|-{'-'*18}-|-{'-'*18}")
+    logger.info(f"{'Macro F1 Score':<20} | {orig_f1:<18.4f} | {opt_f1:<18.4f}")
+    logger.info(f"{'Avg Latency (ms)':<20} | {orig_lat:<18.2f} | {opt_lat:<18.2f}")
+    logger.info(f"{'P99 Latency (ms)':<20} | {orig_p99:<18.2f} | {opt_p99:<18.2f}")
+    logger.info(f"{'Throughput (FPS)':<20} | {orig_tp:<18.1f} | {opt_tp:<18.1f}")
+    logger.info(f"{'Model Size (MB)':<20} | {orig_size:<18.2f} | {opt_size:<18.2f}")
+    logger.info("=" * 60)
 
-    return quant_f1, quant_lat
+    return opt_f1, opt_lat
 
 
 if __name__ == "__main__":
@@ -301,7 +317,7 @@ if __name__ == "__main__":
     parser.add_argument("--lambda_cl", type=float, required=True)
     parser.add_argument("--use_stats_prompts", action="store_true")
     parser.add_argument("--model_version", type=str, default="optimized")
-    parser.add_argument("--use_stats", action="store_true", default=True)
+    parser.add_argument("--use_stats", action="store_true", default=False)
     parser.add_argument("--stats_input_dim", type=int, default=3)
     args = parser.parse_args()
 
@@ -330,97 +346,58 @@ if __name__ == "__main__":
 
     mlflow.set_experiment("TrafficCLIP_Quantization")
     # --- 2. System Evaluation ---
-    with mlflow.start_run(run_name="System_Profiling_Run"):
+    with mlflow.start_run(run_name="ONNX_System_Profiling"):
         try:
+            # STEP A: Initialize Baseline Model
             traffic_cfg = config["dataset"]["traffic"]["classes"]
             num_classes = sum(len(c) for c in traffic_cfg.values())
-            exp_tag = (
-                f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}"
-            )
-            if args.use_stats:
-                exp_tag += f"_stats_data{args.use_stats}"
 
-            # STEP A: Setup Original FP32 Model
             orig_model = OptimizedTrafficCLIP(
-                num_classes=num_classes,
-                use_stats=args.use_stats,
-                stats_input_dim=args.stats_input_dim,
+                num_classes=num_classes, use_stats=args.use_stats
             ).to("cpu")
 
-            model_uri = f"models:/best_ht/latest"
-            logging.info(f"Downloading FP32 weights from {model_uri}")
+            # Load Weights from best_ht
+            model_uri = "models:/best_ht/latest"
             local_dir = mlflow.artifacts.download_artifacts(model_uri)
-
-            # Flexible Checkpoint Loading
             weights_path = Path(local_dir) / "data" / "model.pth"
             checkpoint = torch.load(
                 weights_path, map_location="cpu", weights_only=False
             )
 
-            # Extract state_dict if it's a model object or nested dict
-            if isinstance(checkpoint, torch.nn.Module):
-                state_dict = checkpoint.state_dict()
-            elif isinstance(checkpoint, dict):
-                state_dict = checkpoint.get(
-                    "model", checkpoint.get("state_dict", checkpoint)
-                )
-            else:
-                state_dict = checkpoint
-
+            # Flexible mapping
+            state_dict = (
+                checkpoint.state_dict()
+                if isinstance(checkpoint, torch.nn.Module)
+                else checkpoint
+            )
             orig_model.load_state_dict(state_dict)
             logging.info("FP32 weights successfully mapped.")
 
-            # STEP B: Setup Quantized INT8 Model
-            logging.info("Building INT8 Quantized structure...")
+            # STEP B: Prepare Test Data & Dummy Batch
+            test_loader = create_calibration_dataloader(num_samples=500)
+            dummy_batch = next(iter(test_loader))
 
-            # Start with a clean instance to perform the structural transform
-            dummy_model = OptimizedTrafficCLIP(
-                num_classes=num_classes,
-                use_stats=args.use_stats,
-                stats_input_dim=args.stats_input_dim,
-            ).to("cpu")
+            # STEP C: Export to ONNX
+            onnx_path = "traffic_clip_optimized.onnx"
+            onnx_session = export_to_onnx(orig_model, dummy_batch, onnx_path)
 
-            # Transform structure (Fusion + Observers + Conversion)
-            try:
-                quant_model = quantize_traffic_model(dummy_model)
-            except Exception as e:
-                logging.error(f"Error occurred during quantization: {e}")
-                raise e
+            # Log the ONNX file as an artifact
+            logging.info(f"Logging ONNX model saved at: {onnx_path}")
+            mlflow.log_artifact(onnx_path)
 
-            # Load specific saved INT8 weights
-            int8_path = "quantized_traffic_model.pt"
-            if Path(int8_path).exists():
-                # Using weights_only=False as quantized weights often contain metadata
-                int8_checkpoint = torch.load(
-                    int8_path, map_location="cpu", weights_only=False
-                )
-                quant_model.load_state_dict(int8_checkpoint)
-                logging.info(f"Successfully loaded INT8 weights from {int8_path}")
-            else:
-                logging.warning(
-                    "Saved INT8 weights not found; profiling the dynamically converted instance."
-                )
+            # STEP D: Benchmark
+            # Note: You'll need to update evaluate_quantized_system to handle ONNX sessions
+            evaluate_quantized_system(
+                original_model=orig_model,
+                optimized_model=onnx_session,  # Session instead of Module
+                test_loader=test_loader,
+            )
 
-            # STEP C: Benchmarking
-            try:
-                test_loader = create_calibration_dataloader(num_samples=500)
-                logging.info("Calibration dataloader created successfully.")
-            except Exception as e:
-                logging.error(f"Error creating calibration dataloader: {e}")
-                raise e
-
-            try:
-                evaluate_quantized_system(
-                    original_model=orig_model,
-                    quantized_model=quant_model,
-                    test_loader=test_loader,
-                )
-                logging.info("Evaluation completed without errors.")
-            except Exception as e:
-                logging.error(f"Error occurred during evaluation: {e}")
-
-            logging.info("System profiling successfully logged to DagsHub.")
+            mlflow.set_tag("status", "success")
+            logging.info("ONNX Profiling successfully logged to DagsHub.")
 
         except Exception as e:
             logging.error(f"Profiling Pipeline failed: {e}")
-            mlflow.set_tag("status", "failed")
+            import traceback
+
+            logging.error(traceback.format_exc())

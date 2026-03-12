@@ -8,6 +8,7 @@ import cloudpickle
 import dagshub
 import mlflow
 import numpy as np
+import onnxruntime as ort
 import torch
 from sklearn.metrics import f1_score
 
@@ -273,175 +274,189 @@ from src.utils.utils import load_config
 #         f"Summary: {orig_lat/quant_lat:.1f}x Speedup | {orig_size/quant_size:.1f}x Compression"
 #     )
 
+
 #     return quant_f1, quant_lat
-
-
-def quantize_traffic_model(model, calibration_loader, backend="fbgemm"):
+def export_to_onnx(model, dummy_batch, save_path="model.onnx", use_stats=False):
     """
-    Performs Post-Training Static Quantization (PTQ) on the OptimizedTrafficCLIP model.
-
-    Args:
-        model: The trained OptimizedTrafficCLIP model (float32).
-        calibration_loader: Dataloader with 200-300 balanced validation samples.
-        backend: 'fbgemm' for x86 CPUs (Intel/AMD) or 'qnnpack' for ARM.
+    Exports TrafficCLIP to ONNX with explicit input/output mapping.
     """
+    import onnxruntime as ort
+
+    logging.info(f"Exporting model to ONNX: {save_path}...")
     model.eval()
+    model.to("cpu")
 
-    # 1. Module Fusion: Merges Linear + ReLU to reduce memory round-trips
-    logging("Fusing modules")
-    modules_to_fuse = [
-        ["stats_proj.net.0", "stats_proj.net.2"],  # Linear + ReLU (Stats Head)
-        ["fusion_head.mlp.0", "fusion_head.mlp.2"],  # Linear + ReLU (Fusion Head)
-    ]
+    img = dummy_batch["image"].cpu()
+    ids = dummy_batch["input_ids"].cpu()
+    mask = dummy_batch["attention_mask"].cpu()
 
-    # We use a try-except because if layers were already fused, this might error.
-    try:
-        fused_model = torch.quantization.fuse_modules(model, modules_to_fuse)
-    except Exception as e:
-        logging(f"Fusion skipped or failed: {e}")
-        fused_model = model
+    if use_stats:
+        stats = dummy_batch["stats"].cpu()
+        inputs = (img, ids, mask, stats)
+        input_names = ["image", "input_ids", "attention_mask", "stats"]
+        dynamic_axes = {
+            "image": {0: "batch_size"},
+            "input_ids": {0: "batch_size"},
+            "attention_mask": {0: "batch_size"},
+            "stats": {0: "batch_size"},
+        }
+    else:
+        inputs = (img, ids, mask)
+        input_names = ["image", "input_ids", "attention_mask"]
+        dynamic_axes = {
+            "image": {0: "batch_size"},
+            "input_ids": {0: "batch_size"},
+            "attention_mask": {0: "batch_size"},
+        }
 
-    # 2. Assign Quantization Configuration
-    fused_model.qconfig = torch.quantization.get_default_qconfig(backend)
-
-    # 3.Inserts 'observers' to track the min/max ranges of your data
-    torch.quantization.prepare(fused_model, inplace=True)
-
-    # 4. Calibration
-    logging(f"Calibrating on {len(calibration_loader.dataset)} samples")
-    with torch.no_grad():
-        for images, stats, input_ids, attn_mask, _ in calibration_loader:
-            fused_model(images, input_ids, attn_mask, stats)
-
-    # 5. Convert: Actually transforms the weights from Float32 to Int8
-    logging("Converting model to INT8")
-    quantized_model = torch.quantization.convert(fused_model, inplace=False)
-
-    return quantized_model
-
-
-if __name__ == "__main__":
-    # --- 1. Path & Environment Setup ---
-    current_file = Path(__file__).resolve()
-    project_root = current_file.parents[2]
-
-    # Ensure project root is in path for custom module discovery
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
-    if str(project_root / "src") not in sys.path:
-        sys.path.insert(0, str(project_root / "src"))
-
-    # Register the model class for safe unpickling (PyTorch 2.6+)
-    import torch.serialization
-
-    from models.opt_traffic_clip import OptimizedTrafficCLIP
-
-    torch.serialization.add_safe_globals([OptimizedTrafficCLIP])
-
-    config = load_config()
-
-    parser = argparse.ArgumentParser(
-        description="Profile TrafficCLIP System Performance"
-    )
-    parser.add_argument("--lambda_cl", type=float, required=True)
-    parser.add_argument("--use_stats_prompts", action="store_true")
-    parser.add_argument("--model_version", type=str, default="optimized")
-    parser.add_argument("--use_stats", action="store_true", default=True)
-    parser.add_argument("--stats_input_dim", type=int, default=3)
-    args = parser.parse_args()
-
-    # Initialize DagsHub/MLflow
-    dagshub.init(
-        repo_owner=config["user"]["name"],
-        repo_name=config["user"]["ht_repo"],
-        mlflow=True,
+    torch.onnx.export(
+        model,
+        inputs,
+        save_path,
+        export_params=True,
+        opset_version=14,
+        do_constant_folding=True,
+        input_names=input_names,
+        output_names=["logits", "scale"],
+        dynamic_axes=dynamic_axes,
     )
 
-    logger = logging.getLogger("TrafficCLIP")  # Named logger
-    logger.setLevel(logging.INFO)
+    logging.info("ONNX Export successful.")
 
-    if not logger.handlers:
-        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    session = ort.InferenceSession(
+        save_path,
+        providers=["CPUExecutionProvider"],
+    )
 
-        # Stream (Terminal)
-        sh = logging.StreamHandler()
-        sh.setFormatter(formatter)
-        logger.addHandler(sh)
+    logging.info("ONNX Model Inputs:")
+    for inp in session.get_inputs():
+        logging.info(f" - {inp.name}")
 
-        # File
-        fh = logging.FileHandler("profile.log")
-        fh.setFormatter(formatter)
-        logger.addHandler(fh)
+    return session
 
-    mlflow.set_experiment("TrafficCLIP_Quantization")
-    # --- 2. System Evaluation ---
-    with mlflow.start_run(run_name="System_Profiling_Run"):
-        try:
-            traffic_cfg = config["dataset"]["traffic"]["classes"]
-            num_classes = sum(len(c) for c in traffic_cfg.values())
-            exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
 
-            # STEP A: Setup Original FP32 Model
-            orig_model = OptimizedTrafficCLIP(
-                num_classes=num_classes,
-                use_stats=args.use_stats,
-                stats_input_dim=args.stats_input_dim,
-            ).to("cpu")
+# if __name__ == "__main__":
+#     # --- 1. Path & Environment Setup ---
+#     current_file = Path(__file__).resolve()
+#     project_root = current_file.parents[2]
 
-            model_uri = f"models:/{exp_tag}/latest"
-            logging.info(f"Downloading FP32 weights from {model_uri}")
-            local_dir = mlflow.artifacts.download_artifacts(model_uri)
+#     # Ensure project root is in path for custom module discovery
+#     if str(project_root) not in sys.path:
+#         sys.path.insert(0, str(project_root))
+#     if str(project_root / "src") not in sys.path:
+#         sys.path.insert(0, str(project_root / "src"))
 
-            # Flexible Checkpoint Loading
-            weights_path = Path(local_dir) / "data" / "model.pth"
-            checkpoint = torch.load(
-                weights_path, map_location="cpu", weights_only=False
-            )
+#     # Register the model class for safe unpickling (PyTorch 2.6+)
+#     import torch.serialization
 
-            # Extract state_dict if it's a model object or nested dict
-            if isinstance(checkpoint, torch.nn.Module):
-                state_dict = checkpoint.state_dict()
-            elif isinstance(checkpoint, dict):
-                state_dict = checkpoint.get(
-                    "model", checkpoint.get("state_dict", checkpoint)
-                )
-            else:
-                state_dict = checkpoint
+#     from models.opt_traffic_clip import OptimizedTrafficCLIP
 
-            orig_model.load_state_dict(state_dict)
-            logging.info("FP32 weights successfully mapped.")
+#     torch.serialization.add_safe_globals([OptimizedTrafficCLIP])
 
-            # STEP B: Setup Quantized INT8 Model
-            logging.info("Building INT8 Quantized structure...")
+#     config = load_config()
 
-            # Start with a clean instance to perform the structural transform
-            dummy_model = OptimizedTrafficCLIP(
-                num_classes=num_classes,
-                use_stats=args.use_stats,
-                stats_input_dim=args.stats_input_dim,
-            ).to("cpu")
+#     parser = argparse.ArgumentParser(
+#         description="Profile TrafficCLIP System Performance"
+#     )
+#     parser.add_argument("--lambda_cl", type=float, required=True)
+#     parser.add_argument("--use_stats_prompts", action="store_true")
+#     parser.add_argument("--model_version", type=str, default="optimized")
+#     parser.add_argument("--use_stats", action="store_true", default=True)
+#     parser.add_argument("--stats_input_dim", type=int, default=3)
+#     args = parser.parse_args()
 
-            # Transform structure (Fusion + Observers + Conversion)
-            try:
-                quant_model = quantize_traffic_model(dummy_model)
-            except Exception as e:
-                logging.error(f"Error occurred during quantization: {e}")
-                raise e
+#     # Initialize DagsHub/MLflow
+#     dagshub.init(
+#         repo_owner=config["user"]["name"],
+#         repo_name=config["user"]["ht_repo"],
+#         mlflow=True,
+#     )
 
-            # Load specific saved INT8 weights
-            int8_path = "quantized_traffic_model.pt"
-            if Path(int8_path).exists():
-                # Using weights_only=False as quantized weights often contain metadata
-                int8_checkpoint = torch.load(
-                    int8_path, map_location="cpu", weights_only=False
-                )
-                quant_model.load_state_dict(int8_checkpoint)
-                logging.info(f"Successfully loaded INT8 weights from {int8_path}")
-            else:
-                logging.warning(
-                    "Saved INT8 weights not found; profiling the dynamically converted instance."
-                )
+#     logger = logging.getLogger("TrafficCLIP")  # Named logger
+#     logger.setLevel(logging.INFO)
 
-        except Exception as e:
-            logging.error(f"Error during model setup: {e}")
-            raise e
+#     if not logger.handlers:
+#         formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+
+#         # Stream (Terminal)
+#         sh = logging.StreamHandler()
+#         sh.setFormatter(formatter)
+#         logger.addHandler(sh)
+
+#         # File
+#         fh = logging.FileHandler("profile.log")
+#         fh.setFormatter(formatter)
+#         logger.addHandler(fh)
+
+#     mlflow.set_experiment("TrafficCLIP_Quantization")
+#     # --- 2. System Evaluation ---
+#     with mlflow.start_run(run_name="System_Profiling_Run"):
+#         try:
+#             traffic_cfg = config["dataset"]["traffic"]["classes"]
+#             num_classes = sum(len(c) for c in traffic_cfg.values())
+#             exp_tag = f"{args.model_version}_L{args.lambda_cl}_stats{args.use_stats_prompts}_stats_data{args.use_stats}"
+
+#             # STEP A: Setup Original FP32 Model
+#             orig_model = OptimizedTrafficCLIP(
+#                 num_classes=num_classes,
+#                 use_stats=args.use_stats,
+#                 stats_input_dim=args.stats_input_dim if args.use_stats else None,
+#             ).to("cpu")
+
+#             model_uri = f"models:/{exp_tag}/latest"
+#             logging.info(f"Downloading FP32 weights from {model_uri}")
+#             local_dir = mlflow.artifacts.download_artifacts(model_uri)
+
+#             # Flexible Checkpoint Loading
+#             weights_path = Path(local_dir) / "data" / "model.pth"
+#             checkpoint = torch.load(
+#                 weights_path, map_location="cpu", weights_only=False
+#             )
+
+#             # Extract state_dict if it's a model object or nested dict
+#             if isinstance(checkpoint, torch.nn.Module):
+#                 state_dict = checkpoint.state_dict()
+#             elif isinstance(checkpoint, dict):
+#                 state_dict = checkpoint.get(
+#                     "model", checkpoint.get("state_dict", checkpoint)
+#                 )
+#             else:
+#                 state_dict = checkpoint
+
+#             orig_model.load_state_dict(state_dict)
+#             logging.info("FP32 weights successfully mapped.")
+
+#             # STEP B: Setup Quantized INT8 Model
+#             logging.info("Building INT8 Quantized structure...")
+
+#             # Start with a clean instance to perform the structural transform
+#             dummy_model = OptimizedTrafficCLIP(
+#                 num_classes=num_classes,
+#                 use_stats=args.use_stats,
+#                 stats_input_dim=args.stats_input_dim,
+#             ).to("cpu")
+
+#             # Transform structure (Fusion + Observers + Conversion)
+#             try:
+#                 quant_model = quantize_traffic_model(dummy_model)
+#             except Exception as e:
+#                 logging.error(f"Error occurred during quantization: {e}")
+#                 raise e
+
+#             # Load specific saved INT8 weights
+#             int8_path = "quantized_traffic_model.pt"
+#             if Path(int8_path).exists():
+#                 # Using weights_only=False as quantized weights often contain metadata
+#                 int8_checkpoint = torch.load(
+#                     int8_path, map_location="cpu", weights_only=False
+#                 )
+#                 quant_model.load_state_dict(int8_checkpoint)
+#                 logging.info(f"Successfully loaded INT8 weights from {int8_path}")
+#             else:
+#                 logging.warning(
+#                     "Saved INT8 weights not found; profiling the dynamically converted instance."
+#                 )
+
+#         except Exception as e:
+#             logging.error(f"Error during model setup: {e}")
+#             raise e
