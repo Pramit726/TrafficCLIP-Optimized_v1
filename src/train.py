@@ -33,6 +33,7 @@ def validate(
     device,
     config,
     lambda_cl=5.0,
+    class_names=None,
 ):
     """
     Standardized Validation Function:
@@ -53,8 +54,13 @@ def validate(
 
     class_names = val_loader.dataset.dataset.class_names
 
+    class_names_list = (
+        class_names
+        if class_names is not None
+        else val_loader.dataset.dataset.class_names
+    )
     class_prompts = [
-        f"A network traffic gray photo of class {name}." for name in class_names
+        f"A network traffic gray photo of class {name}." for name in class_names_list
     ]
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
     class_tokens = tokenizer(
@@ -351,6 +357,7 @@ def train(
     scheduler=None,
     is_tune=False,
     is_final=False,
+    class_names=None,
 ):
     """
     Optimized Tri-modal Training Loop
@@ -402,9 +409,13 @@ def train(
     # ).to(device)
     # logging.info("Number of classes: %d", len(train_loader.dataset.dataset.class_names))
 
+    class_names_list = (
+        class_names
+        if class_names is not None
+        else train_loader.dataset.dataset.class_names
+    )
     class_prompts = [
-        f"A network traffic gray photo of class {name}."
-        for name in val_loader.dataset.dataset.class_names
+        f"A network traffic gray photo of class {name}." for name in class_names_list
     ]
     # logging.info(
     #     "Master Class List: %d classes", len(train_loader.dataset.dataset.class_names)
@@ -488,15 +499,27 @@ def train(
                 lambda_cl=lambda_cl,
             )
         else:
-            val_metrics = validate(
-                model,
-                model_version,
-                args=args,
-                device=device,
-                val_loader=val_loader,
-                config=config,
-                lambda_cl=lambda_cl,
-            )
+            if not is_final:
+                val_metrics = validate(
+                    model,
+                    model_version,
+                    args=args,
+                    device=device,
+                    val_loader=val_loader,
+                    config=config,
+                    lambda_cl=lambda_cl,
+                )
+            else:
+                val_metrics = validate(
+                    model,
+                    model_version,
+                    args=args,
+                    device=device,
+                    val_loader=val_loader,
+                    config=config,
+                    lambda_cl=lambda_cl,
+                    class_names=class_names,
+                )
 
         val_loss = val_metrics["loss"]
         val_acc = val_metrics["accuracy"]

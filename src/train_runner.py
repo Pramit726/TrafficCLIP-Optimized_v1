@@ -90,6 +90,7 @@ def run_experiment(args, config, device, is_final=False, is_tune=False):
             mlflow.log_params(vars(args))
 
         if is_final:
+            class_names = val_loader.dataset.dataset.class_names
             combined_dataset = torch.utils.data.ConcatDataset(
                 [train_loader.dataset, val_loader.dataset]
             )
@@ -132,6 +133,7 @@ def run_experiment(args, config, device, is_final=False, is_tune=False):
             scheduler=None,
             is_tune=is_tune,
             is_final=is_final,
+            class_names=class_names if is_final else None,
         )
 
         # else:
